@@ -110,6 +110,7 @@ def register():
     neuromorphovis.interface.ui.soma_panel.register_panel()
     neuromorphovis.interface.ui.morphology_panel.register_panel()
     neuromorphovis.interface.ui.mesh_panel.register_panel()
+    neuromorphovis.interface.ui.dbs_panel.register_panel()
 
 
 ####################################################################################################
@@ -125,7 +126,7 @@ def unregister():
     neuromorphovis.interface.ui.repair_panel.unregister_panel()
     neuromorphovis.interface.ui.soma_panel.unregister_panel()
     neuromorphovis.interface.ui.morphology_panel.unregister_panel()
-    neuromorphovis.interface.ui.mesh_panel.unregister_panel()
+    neuromorphovis.interface.ui.dbs_panel.unregister_panel()
 
 
 ####################################################################################################
