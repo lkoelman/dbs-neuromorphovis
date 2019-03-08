@@ -26,6 +26,17 @@ In Blender go to file > user preferences > Add-ons
 - type 'neuro' in search box
 - check the box for NeuroMorphoVis
 
+# Install PIP for Blender Python
+
+This lets you install any additional Python packages required by your addon.
+It uses the 'ensurepip' module packaged with Blender to install pip.
+
+```sh
+cd /path/to/blender/python/bin
+./python -m ensurepip
+./python -m pip install <package name>
+```
+
 # Directory structure
 
 The addon is loaded in the top-level `__init__.py`, in function `register()`.
