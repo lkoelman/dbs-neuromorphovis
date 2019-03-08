@@ -69,8 +69,6 @@ def load_morphologies(panel_object, context_scene):
     # global current_morphology_label
     # global current_morphology_path
 
-    # TODO: load all morphologies rather than one (ctrl + f Morphologyfile)
-    # TODO: update variables in ui_data to hold multiple morphologies
 
     # NOTE: the difference between
     # - selected in widget: nmv.interface.ui_options.io.morphologies_input_directory 
@@ -134,8 +132,10 @@ def sketch_morphology_skeleton_guide(morphology, options):
     builder = nmv.builders.SkeletonBuilder(morphology, options)
 
     # Draw morphology skeleton and store list of reconstructed objects
-    nmvif.ui_reconstructed_skeletons[morphology.label] = \
-        builder.draw_morphology_skeleton() # list of 3D elements
+    geometry = builder.draw_morphology_skeleton(
+                    parent_to_soma=True, group_geometry=True)
+    nmvif.ui_reconstructed_skeletons[morphology.label] = geometry
+        
 
 
 ################################################################################
@@ -356,6 +356,21 @@ class DbsUpdateMorphologyCoordinates(bpy.types.Operator):
         in_edit_mode = False
 
         return {'FINISHED'}
+
+
+class DuplicateMorphology(bpy.types.Operator):
+    """
+    Make duplicates of selected morphology and optionally
+    distribute them in space.
+    """
+    # TODO: find out how to copy morphology
+    # - implement duplicate method on nmv.skeleton.structure.morphology object
+    #   - deepcopy its members, but change gid and name
+    # - apply transformation to the Blender geometry
+    # - do something like nmv.edit.MorphologyEditor.update_skeleton_coordinates
+    #   - updates sample points from skeleton_mesh that is drawn
+    #   - figure out if sample points are transformed when you play around with the sketched skeleton in Blender
+    pass
 
 
 class DbsExportMorphologySWC(bpy.types.Operator):

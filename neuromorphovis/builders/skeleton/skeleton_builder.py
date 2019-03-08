@@ -1071,8 +1071,9 @@ class SkeletonBuilder:
     ################################################################################################
     # @draw_morphology_skeleton
     ################################################################################################
-    def draw_morphology_skeleton(self):
-        """Reconstruct and draw the morphological skeleton using poly-lines.
+    def draw_morphology_skeleton(self, parent_to_soma=True, group_geometry=False):
+        """
+        Reconstruct and draw the morphological skeleton using poly-lines.
 
         :return
             A list of all the drawn morphology objects including the soma and arbors.
@@ -1149,10 +1150,11 @@ class SkeletonBuilder:
         bevel_object.hide = True
 
         # Draw the soma as a sphere object
+        soma_object = None
         if self.options.morphology.soma_representation == nmv.enums.Soma.Representation.SPHERE:
 
             # Draw the soma sphere
-            soma_sphere = self.draw_soma_sphere()
+            soma_object = soma_sphere = self.draw_soma_sphere()
 
             # Smooth shade the sphere to look nice
             nmv.mesh.ops.shade_smooth_object(soma_sphere)
@@ -1169,7 +1171,7 @@ class SkeletonBuilder:
             # Reconstruct the three-dimensional profile of the soma mesh without applying the
             # default shader to it,
             # since we need to use the shader specified in the morphology options
-            soma_mesh = soma_builder_object.reconstruct_soma_mesh(apply_shader=False)
+            soma_object = soma_mesh = soma_builder_object.reconstruct_soma_mesh(apply_shader=False)
 
             # Apply the shader given in the morphology options, not the one in the soma toolbox
             nmv.shading.set_material_to_object(soma_mesh, self.soma_materials[0])
@@ -1192,6 +1194,21 @@ class SkeletonBuilder:
                 morphology_objects=morphology_objects,
                 blue_config=self.options.morphology.blue_config,
                 gid=self.options.morphology.gid)
+
+        # Create object hierarchy with soma as parent
+        if parent_to_soma and soma_object is not None:
+            for obj in morphology_objects:
+                if obj is soma_object:
+                    continue
+                obj.parent = soma_object
+
+        # Group geometry for easy selection
+        if group_geometry:
+            group_name = self.morphology.label
+            group = bpy.data.groups.get(group_name, bpy.data.groups.new(group_name))
+            for obj in morphology_objects:
+                if obj.name not in group.objects:
+                    group.objects.link(obj)
 
         # Return the list of the drawn morphology objects
         return morphology_objects
