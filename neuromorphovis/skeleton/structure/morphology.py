@@ -107,6 +107,60 @@ class Morphology:
         # Update the branching order
         self.update_branching_order()
 
+
+    def duplicate(self, label):
+        """
+        Create a copy of this morphology with same geometry and new name.
+
+        :param label:
+            label for duplicated morphology
+        """
+        return Morphology(soma=copy.deepcopy(self.soma),
+                    axon=copy.deepcopy(self.axon),
+                    dendrites=copy.deepcopy(self.dendrites),
+                    apical_dendrite=copy.deepcopy(self.apical_dendrite),
+                    label=label)
+
+
+    def apply_transform(self, matrix):
+        """
+        Applies 4x4 transformation matrix to each sample point.
+
+        :param matrix:
+            mathutils.Matrix (4x4)
+        """
+        xform_pt = lambda pt: (matrix * pt.to_4d()).to_3d()
+
+        def transform_subtree(section):
+            # transform all sample points in section
+            for i in range(0, len(section.samples)):
+                new_pt = matrix * section.samples[i].point.to_4d()
+                section.samples[i].point = new_pt.to_3d()
+            # recursively do the same for children
+            for child in section.children:
+                transform_subtree(child)
+
+        # Transform soma
+        self.soma.centroid = xform_pt(self.soma.centroid)
+        self.soma.profile_points = [
+            xform_pt(pt) for pt in self.soma.profile_points]
+        if self.soma.arbors_profile_points is not None:
+            self.soma.arbors_profile_points = [
+                xform_pt(pt) for pt in self.soma.arbors_profile_points]
+
+        # Transform axon if exists
+        if self.has_axon():
+            self.transform_subtree(self.axon)
+
+        # Transform apical dendrite if exists
+        if self.has_apical_dendrite():
+            self.transform_subtree(self.apical_dendrite)
+
+        # Transform basal dendrites
+        for basal_dendrite in self.dendrites:
+            transform_subtree(basal_dendrite)
+
+
     ################################################################################################
     # @has_axon
     ################################################################################################

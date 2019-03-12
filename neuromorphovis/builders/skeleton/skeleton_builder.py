@@ -53,6 +53,9 @@ class SkeletonBuilder:
 
         :param morphology:
             A given morphology.
+
+        :param options:
+            nmv.options.NeuroMorphoVisOptions object
         """
 
         # Morphology
@@ -88,6 +91,13 @@ class SkeletonBuilder:
         # Progressive rendering frame index, starts from 1 since the soma will be 0
         self.progressive_frame_index = 1
 
+
+    def prefix_name(self, name):
+        """
+        Create unique section name for this morphology
+        """
+        return self.morphology.label + '.' + name
+
     ################################################################################################
     # @create_skeleton_materials
     ################################################################################################
@@ -97,38 +107,44 @@ class SkeletonBuilder:
         """
 
         # Clear all the materials that are already present in the scene
-        for material in bpy.data.materials:
-            if 'soma_skeleton' in material.name or \
-               'axon_skeleton' in material.name or \
-               'basal_dendrites_skeleton' in material.name or \
-               'apical_dendrite_skeleton' in material.name or \
-               'articulation' in material.name:
-                    material.user_clear()
-                    bpy.data.materials.remove(material)
+        # FIXME: re-use global materials, don't create for each cell
+        # for material in bpy.data.materials:
+        #     if 'soma_skeleton' in material.name or \
+        #        'axon_skeleton' in material.name or \
+        #        'basal_dendrites_skeleton' in material.name or \
+        #        'apical_dendrite_skeleton' in material.name or \
+        #        'articulation' in material.name:
+        #             material.user_clear()
+        #             bpy.data.materials.remove(material)
 
         # Soma
         self.soma_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name='soma_skeleton', material_type=self.options.morphology.material,
+            name=self.prefix_name('soma_skeleton'),
+            material_type=self.options.morphology.material,
             color=self.options.morphology.soma_color)
 
         # Axon
         self.axon_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name='axon_skeleton', material_type=self.options.morphology.material,
+            name=self.prefix_name('axon_skeleton'),
+            material_type=self.options.morphology.material,
             color=self.options.morphology.axon_color)
 
         # Basal dendrites
         self.basal_dendrites_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name='basal_dendrites_skeleton', material_type=self.options.morphology.material,
+            name=self.prefix_name('basal_dendrites_skeleton'),
+            material_type=self.options.morphology.material,
             color=self.options.morphology.basal_dendrites_color)
 
         # Apical dendrite
         self.apical_dendrite_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name='apical_dendrite_skeleton', material_type=self.options.morphology.material,
+            name=self.prefix_name('apical_dendrite_skeleton'),
+            material_type=self.options.morphology.material,
             color=self.options.morphology.apical_dendrites_color)
 
         # Articulations for the articulated reconstruction method
         self.articulation_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name='articulation', material_type=self.options.morphology.material,
+            name=self.prefix_name('articulation'),
+            material_type=self.options.morphology.material,
             color=self.options.morphology.articulation_color)
 
         # Create an illumination specific for the given material
@@ -163,7 +179,8 @@ class SkeletonBuilder:
 
         # Draw the soma as a sphere
         soma_sphere = nmv.mesh.create_uv_sphere(
-            radius=soma.mean_radius, location=soma.centroid, name='soma')
+            radius=soma.mean_radius, location=soma.centroid,
+            name=self.prefix_name('soma'))
 
         # Assign a material to the soma sphere
         nmv.shading.set_material_to_object(soma_sphere, self.soma_materials[0])
@@ -220,7 +237,8 @@ class SkeletonBuilder:
         # Create the sphere based on the largest radius
         section_terminal_sphere = nmv.geometry.create_uv_sphere(
             radius=sphere_radius * 1.125, location=point, subdivisions=16,
-            name='joint_%d' % section.id, color=self.options.morphology.articulation_color)
+            name=self.prefix_name('joint_%d' % section.id),
+            color=self.options.morphology.articulation_color)
 
         # Return a reference to the terminal sphere
         return section_terminal_sphere
@@ -311,7 +329,7 @@ class SkeletonBuilder:
 
         # Make sure that the arbor exist
         if root is not None:
-            section_name = '%s_%d' % (name, root.id)
+            section_name = self.prefix_name('%s_%d' % (name, root.id))
             drawn_spheres = self.draw_section_samples_as_spheres(root)
 
             # Add the drawn segments to the 'segments_objects'
@@ -371,7 +389,7 @@ class SkeletonBuilder:
 
         # Make sure that the arbor exist
         if root is not None:
-            section_name = '%s_%d' % (name, root.id)
+            section_name = self.prefix_name('%s_%d' % (name, root.id))
             drawn_segments = nmv.skeleton.ops.draw_disconnected_segments(
                 root, name=section_name,
                 material_list=material_list,
@@ -418,7 +436,7 @@ class SkeletonBuilder:
         data = nmv.skeleton.ops.get_section_poly_line(section)
 
         # Use the section id to tag the section name
-        section_name = '%s_%d_section' % (name, section.id)
+        section_name = self.prefix_name('%s_%d_section' % (name, section.id))
 
         # Section material
         section_material = None
@@ -535,7 +553,7 @@ class SkeletonBuilder:
                 basal_dendrites_segments_objects = []
 
                 for i, basal_dendrite in enumerate(self.morphology.dendrites):
-                    dendrite_name = '%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i)
+                    dendrite_name = self.prefix_name('%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i))
                     self.draw_sections_as_spheres(
                         basal_dendrite, name=dendrite_name,
                         max_branching_level=self.options.morphology.basal_dendrites_branch_order,
@@ -611,7 +629,7 @@ class SkeletonBuilder:
                 basal_dendrites_segments_objects = []
 
                 for i, basal_dendrite in enumerate(self.morphology.dendrites):
-                    dendrite_name = '%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i)
+                    dendrite_name = self.prefix_name('%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i))
                     self.draw_section_as_disconnected_segments(
                         basal_dendrite, name=dendrite_name,
                         max_branching_level=self.options.morphology.basal_dendrites_branch_order,
@@ -692,7 +710,7 @@ class SkeletonBuilder:
                 basal_dendrites_sections_objects = []
 
                 for i, basal_dendrite in enumerate(self.morphology.dendrites):
-                    dendrite_prefix = '%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i)
+                    dendrite_prefix = self.prefix_name('%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i))
                     self.draw_root_as_disconnected_sections(
                         basal_dendrite,
                         name=dendrite_prefix,
@@ -846,7 +864,7 @@ class SkeletonBuilder:
                 # Draw each basal dendrites as a set connected sections
                 for i, basal_dendrite in enumerate(self.morphology.dendrites):
 
-                    dendrite_prefix = '%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i)
+                    dendrite_prefix = self.prefix_name('%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i))
                     nmv.skeleton.ops.draw_connected_sections(
                         section=copy.deepcopy(basal_dendrite),
                         max_branching_level=self.options.morphology.basal_dendrites_branch_order,
@@ -1002,7 +1020,7 @@ class SkeletonBuilder:
                 for i, basal_dendrite in enumerate(self.morphology.dendrites):
 
                     # Draw the basal dendrites as a set connected sections
-                    dendrite_prefix = '%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i)
+                    dendrite_prefix = self.prefix_name('%s_%d' % (nmv.consts.Arbors.BASAL_DENDRITES_PREFIX, i))
                     nmv.skeleton.ops.draw_connected_sections(
                         section=copy.deepcopy(basal_dendrite),
                         max_branching_level=self.options.morphology.basal_dendrites_branch_order,
@@ -1087,7 +1105,9 @@ class SkeletonBuilder:
         # Create a static bevel object that you can use to scale the samples along the arbors
         # of the morphology
         bevel_object = nmv.mesh.create_bezier_circle(
-            radius=1.0, vertices=self.options.morphology.bevel_object_sides, name='bevel')
+            radius=1.0, vertices=self.options.morphology.bevel_object_sides,
+            name=self.prefix_name('bevel'))
+        # location=self.morphology.soma.centroid
 
         # Add the bevel object to the morphology objects because if this bevel is lost we will
         # lose the rounded structure of the arbors

@@ -29,11 +29,20 @@ import neuromorphovis.scene
 # @MorphologyGlobalEditor
 ####################################################################################################
 class MorphologyEditor:
-    """Morphology Global Editor
+    """
+    Morphology Global Editor
+
     This editor edits the morphology as a single object, rather than representing the skeleton
-    with multiple arbor objects. This is quite convenient when you need to edit all the arbors in
-    a single step. The implementation uses bmeshes instead of meshes to make it extremely fast to
-    toggle and switch between the morphology and the skeleton in case of long axons.
+    with multiple arbor objects. This is quite convenient when you need to edit all the arbors
+    in a single step. The implementation uses bmeshes instead of meshes to make it extremely
+    fast to toggle and switch between the morphology and the skeleton in case of long axons. 
+
+    NOTE: To edit a morphology, this class proceeds as follows:
+    - draw a mesh (not surface, but connected vertices forming a skeleton)
+    - store the index of each morphology sample into the drawn mesh
+    - edit the drawn mesh in Blender GUI
+    - for each sample: look up new coordinates in drawn mesh and use this
+      to update sample coordinates in Morphology object
     """
 
     ################################################################################################
