@@ -7,12 +7,10 @@ This is a modified version of the module 'neuromorphovis.interface.ui.edit_panel
 
 @date   8/03/2019
 
-TODO: whenever transform applied to geometry, also apply to morphology
+FIXME: whenever transform applied to geometry, also apply to morphology
 - upon editing/export/save apply latest matrix_world to Morphology object
-    - save initial matrix_aorld?
+    - save initial matrix_world?
 
-TODO: add function in duplicate, to distribute on grid inside volume
-- add as options in the panel: grid size, number, etc
 """
 
 
@@ -23,7 +21,10 @@ import re
 
 # Blender imports
 import bpy
-from bpy.props import BoolProperty, FloatProperty, IntProperty, StringProperty
+from bpy.props import (
+    BoolProperty, FloatProperty, IntProperty,
+    StringProperty, EnumProperty
+)
 import mathutils
 
 # Internal imports
@@ -32,6 +33,7 @@ import neuromorphovis.edit
 import neuromorphovis.interface as nmvif
 import neuromorphovis.scene
 import neuromorphovis.consts
+import neuromorphovis.bmeshi
 
 # Globals
 ## Morphology editor
@@ -42,9 +44,19 @@ in_edit_mode = False
 
 # Debugging
 DEBUG = True
-def logdebug(*args, **kwargs):
+
+def debug_log(*args, **kwargs):
     if DEBUG:
         print(*args, **kwargs)
+
+def debug_break():
+    """
+    HOWTO:
+    - install ipython using pip with bundled python
+    - exit or ctrl+d to continue
+    """
+    import IPython
+    IPython.embed()
 
 # Info about currently loaded morphologies
 nmvif.ui_options.morphology.morphologies_loaded_directory = None
@@ -69,17 +81,39 @@ class DbsPositioningPanel(bpy.types.Panel):
     bl_category = 'NeuroMorphoVis'
     # bl_options = {'DEFAULT_CLOSED'}
 
-    # Register a variable indicating that morphology is sketched to be able to update the UI
-    bpy.types.Scene.MorphologySketched = BoolProperty(default=False)
-    bpy.types.Scene.MorphologyCoordinatesEdited = BoolProperty(default=False)
+    # --------------------------------------------------------------------------
+    # Properties for UI state
 
-    # Morphology directory
+    ## Properties: morphology import
     default_dir = "/home/luye/Downloads/morphologies" if DEBUG else "Select Directory"
     bpy.types.Scene.MorphologiesDirectory = StringProperty(
         name="Morphologies",
         description="Select a directory to mesh all the morphologies in it",
         default=default_dir, maxlen=2048, subtype='DIR_PATH')
 
+    ## Properties: morphology sketching
+    bpy.types.Scene.MorphologySketched = BoolProperty(default=False)
+    bpy.types.Scene.MorphologyCoordinatesEdited = BoolProperty(default=False)
+
+    ## Properties : duplication
+    bpy.types.Scene.DuplicationLayoutMethod = EnumProperty(
+        items=[('GRID', 'Grid', 'Distribute cells on grid.'),
+               ('RANDOM', 'Random', 'Distribute cells randomly using density.')],
+        name='Layout',
+        default='GRID')
+
+    bpy.types.Scene.DuplicationDensity = FloatProperty(
+        name="Density",
+        description="Desired cell density (cells / mm^3)",
+        default=1000.0, min=1, max=1e6)
+
+    bpy.types.Scene.MaxCellDuplicates = IntProperty(
+        name="Max Duplicates",
+        description="Maximum number of cell duplicates.",
+        default=500, min=1, max=10000)
+
+    # --------------------------------------------------------------------------
+    # Panel overriden methods
 
     def draw(self, context):
         """
@@ -91,7 +125,11 @@ class DbsPositioningPanel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        # Input morphologies for positioning
+        # Importing ------------------------------------------------------------
+        row_import_header = layout.row()
+        row_import_header.label(text='Import morphologies:',
+                                icon='LIBRARY_DATA_DIRECT')
+        # Select directory
         row_dir = layout.row()
         row_dir.prop(scene, 'MorphologiesDirectory')
 
@@ -100,24 +138,51 @@ class DbsPositioningPanel(bpy.types.Panel):
             col_sketch = layout.column(align=True)
             col_sketch.operator('sketch.skeleton_dbs', icon='PARTICLE_POINT')
 
-        # Reconstruction options
+        # Duplication ----------------------------------------------------------
+        row_dup_header = layout.row()
+        row_dup_header.label(text='Duplicate morphologies:',
+                              icon='STICKY_UVS_LOC')
+        
+        ## Duplication - spatial layout
+        row_dup_layout = layout.row()
+        row_dup_layout.label(text='Layout:')
+        row_dup_layout.prop(context.scene, 'DuplicationLayoutMethod', expand=True)
+        
+        ## Duplication - cell density
+        row_dup_density = layout.row()
+        row_dup_density.prop(context.scene, 'DuplicationDensity')
+
+        row_dup_maxnum = layout.row()
+        row_dup_maxnum.prop(context.scene, 'MaxCellDuplicates')
+
+        ## Duplication - target volume
+        col_dup_button = layout.column(align=True)
+        col_dup_button.operator('set.duplication_boundary',
+                                text='Set boundary volume',
+                                icon='MESH_ICOSPHERE')
+
+        ## Duplication - duplicate button
+        col_dup_button = layout.column(align=True)
+        col_dup_button.operator('duplicate.morphology',
+                                icon='MOD_PARTICLES')
+
+        # Editing --------------------------------------------------------------
         col_edit_header = layout.row()
         col_edit_header.label(text='Editing Samples Coordinates:',
                               icon='OUTLINER_OB_EMPTY')
 
+        # Morphology edit / update button
         global is_skeleton_edited
         if not is_skeleton_edited:
-            # Morphology edit button
             col_edit_morph = layout.column(align=True)
             col_edit_morph.operator('edit.morphology_coordinates_dbs',
                                     icon='MESH_DATA')
         else:
-            # Morphology update buttons
             col_update_morph = layout.column(align=True)
             col_update_morph.operator('update.morphology_coordinates_dbs',
                                       icon='MESH_DATA')
 
-        # Saving morphology buttons
+        # Saving morphology ----------------------------------------------------
         if not in_edit_mode:
 
             # Saving morphology options
@@ -409,19 +474,13 @@ class DuplicateMorphology(bpy.types.Operator):
                     description="Z offset of duplicate"
                     )
 
-    def draw(self, context):
-        """
-        Draw options panel for operator
-        """
-        layout = self.layout
-
-        col = layout.column(align=True)
-        col.prop(self, "offset_x", slider=False)
-        col.prop(self, "offset_y", slider=False)
-        col.prop(self, "offset_z", slider=False)
-
+    ############################################################################
+    # Support methods
 
     def make_duplicate_label(self, morphology):
+        """
+        Generate a name for a duplicate cell.
+        """
         num_copies = 0
         match = re.search(r'\.(\d+)$', morphology.label)
         if match:
@@ -438,6 +497,84 @@ class DuplicateMorphology(bpy.types.Operator):
                 return duplicate_label
             num_copies += 1
 
+
+    def make_duplicate_origins(self, context, source_object):
+        """
+        Generate origin points for all cell duplicates.
+
+        :return:
+            List of points
+        """
+        layout_method = context.scene.DuplicationLayoutMethod # 'GRID' or 'RANDOM'
+        density = context.scene.DuplicationDensity
+        max_dups = context.scene.MaxCellDuplicates
+
+        # Get bounding box of target volume
+        bounds_obj = context.scene.objects[context.scene.DuplicationBoundaryName]
+        bbox_corners = np.array([bounds_obj.matrix_world * mathutils.Vector(corner)
+                                    for corner in bounds_obj.bound_box])
+        xyz_min = bbox_corners.min(axis=0)
+        xyz_max = bbox_corners.max(axis=0)
+        # xyz_max = [max((corner[j] for corner in bbox_corners)) for j in range(3)]
+
+        # Generate coordinates in bounding box of boundary volume
+        if layout_method == 'GRID':
+            cell_per_mm = int(density ** (1./3.))
+            grid_samples = [] # one dimension (x/y/z) per row
+            for i in range(3):
+                ncell = int(cell_per_mm * (xyz_max[i] - xyz_min[i]))
+                grid_samples.append(
+                    np.linspace(xyz_min[i], xyz_max[i], num=ncell, endpoint=False))
+            origins = np.array([co.ravel() for co in np.meshgrid(*grid_samples)]).T
+        elif layout_method == 'RANDOM':
+            pass
+        else:
+            raise ValueError('Unexpected layout method', layout_method)
+
+        # Prune points that are not inside boundary volume
+        inside_mask = np.zeros((max(origins.shape), 1), dtype=bool)
+        for i, pt in origins:
+            point, normal, face = bounds_obj.closest_point_on_mesh(pt, 1e12)
+            inside_mask[i] = (point-p).dot(normal) >= 0.0
+        origins = origins[inside_mask, :]
+
+        # Ensure we don't exceed maximum number of copies
+        src_loc = np.array(source_object.location)
+        if origins.shape[0] > max_dups:
+            # sort by distance from source location, keep closest
+            dists = np.linalg.norm(origins - src_loc, axis=1)
+
+        return origins
+
+    ############################################################################
+    # Operator override methods
+
+    # def draw(self, context):
+    #     """
+    #     Draw options panel for operator
+    #     """
+    #     layout = self.layout
+
+    #     col = layout.column(align=True)
+    #     col.prop(self, "offset_x", slider=False)
+    #     col.prop(self, "offset_y", slider=False)
+    #     col.prop(self, "offset_z", slider=False)
+
+    def invoke(self, context, event):
+        """
+        Invoke is used to initialize the operator from the context at the moment
+        the operator is called. It is typically used to assign properties
+        which are then used by execute(). 
+        """
+        # Set properties
+        if context.scene.DuplicationBoundaryName == 'None':
+            self.report({'ERROR'}, 'Please select a boundary volume first.')
+            return {'FINISHED'}
+
+
+        return self.execute(context)
+
+
     def execute(self, context):
         """
         Executes the operator.
@@ -448,35 +585,85 @@ class DuplicateMorphology(bpy.types.Operator):
         # Get selected morphology
         selected_object = context.scene.objects.active
         selected_morphology = get_morphology_from_object(selected_object)
-        logdebug('[DBS] Selected morphology: {}'.format(selected_morphology.label))
         if selected_morphology is None:
             self.report({'ERROR'}, 'Please select a morphology to duplicate')
             return {'FINISHED'}
 
 
-        # Duplicate selected morphology
-        duplicate_label = self.make_duplicate_label(selected_morphology)
-        morph_duplicate = selected_morphology.duplicate(label=duplicate_label)
+        # Get locations to place duplicates
+        dup_origins = self.make_duplicate_origins(context, selected_object)
 
-        # Apply transformation to underlying morphology
-        # xform = mathutils.Matrix.Translation(mathutils.Vector(
-        #             (self.offset_x, self.offset_y, self.offset_z)))
-        # morph_duplicate.apply_transform(xform)
+        for dup_pt in dup_origins:
 
-        # Sketch morphology (create geometry for skeleton)
-        morph_objects = sketch_morphology_skeleton_guide(
-                            morphology=morph_duplicate,
-                            options=copy.deepcopy(nmvif.ui_options))
+            # Duplicate selected morphology
+            duplicate_label = self.make_duplicate_label(selected_morphology)
+            dup_morphology = selected_morphology.duplicate(label=duplicate_label)
 
-        # First apply the transforms already applied to selected objects
-        xform_prev = selected_object.matrix_world
-        xform_new = mathutils.Matrix.Translation(mathutils.Vector(
-                        (self.offset_x, self.offset_y, self.offset_z)))
-        # xform_prev.translation += mathutils.Vector((self.offset_x, self.offset_y, self.offset_z))
+            # Apply transformation to underlying morphology
+            # xform = mathutils.Matrix.Translation(mathutils.Vector(
+            #             (self.offset_x, self.offset_y, self.offset_z)))
+            # dup_morphology.apply_transform(xform)
 
-        # [if morphology updated from geometry] Transform duplicated geometry
-        for geom_obj in morph_objects:
-            geom_obj.matrix_world = xform_new * (xform_prev * geom_obj.matrix_world)
+            # Sketch morphology (create geometry for skeleton)
+            dup_geom_objs = sketch_morphology_skeleton_guide(
+                                morphology=dup_morphology,
+                                options=copy.deepcopy(nmvif.ui_options))
+
+            # New transform is that of source object with translation to new origin
+            xform_mod = selected_object.matrix_world
+            xform_mod.translation = mathutils.Vector(dup_pt)
+
+            # First apply the transforms already applied to selected objects
+            # xform_prev = selected_object.matrix_world
+            # xform_new = mathutils.Matrix.Translation(mathutils.Vector(
+            #                 (self.offset_x, self.offset_y, self.offset_z)))
+
+            # [if morphology updated from geometry] Transform duplicated geometry
+            for geom_obj in dup_geom_objs:
+                geom_obj.matrix_world = xform_mod * geom_obj.matrix_world
+
+        return {'FINISHED'}
+
+
+class SetDuplicationBoundary(bpy.types.Operator):
+    """
+    Update the morphology coordinates following to the repair process.
+    """
+
+    # Operator parameters
+    bl_idname = "set.duplication_boundary"
+    bl_label = "Set boundary volume for cell duplicates"
+
+    bpy.types.Scene.DuplicationBoundaryName = StringProperty(
+        name="DuplicationBoundaryName",
+        description="Name of object representing duplication boundary.",
+        default='None')
+
+    def execute(self, context):
+        """
+        Execute the operator.
+
+        :param context:
+            Rendering context
+        :return:
+            'FINISHED'
+        """
+
+        # Check if selected object is watertight mesh or other volume
+        obj = context.scene.objects.active
+        if obj.type != 'MESH':
+            self.report({'ERROR'}, 'Selected object is not a mesh. ' 
+                                'Please select a watertight mesh as boundary.')
+            return {'FINISHED'}
+
+        nvert_nonmanifold = nmv.bmeshi.ops.count_non_manifold_vertices(context)
+        if nvert_nonmanifold > 0:
+            self.report({'ERROR'}, 'Selected mesh is not watertight. '
+                                 'Please select a watertight mesh as boundary.')
+            return {'FINISHED'}
+
+        # Store name of boundary object for later use
+        context.scene.DuplicationBoundaryName = obj.name
 
         return {'FINISHED'}
 
@@ -513,7 +700,7 @@ class DbsExportMorphologySWC(bpy.types.Operator):
                 nmvif.ui_options.io.morphologies_directory)
 
         # Export the reconstructed morphology as an .swc file
-        # TODO: update to export selected or all morphologies
+        # FIXME: update to export selected or all morphologies
         nmv.file.write_morphology_to_swc_file(
             nmvif.ui_morphology, nmvif.ui_options.io.morphologies_directory)
 
@@ -526,21 +713,15 @@ def register_panel():
     """
 
     # Register UI Elements
-    ## Morphology analysis panel
     bpy.utils.register_class(DbsPositioningPanel)
 
     # Register Operators
-    ## Morphology analysis button
     bpy.utils.register_class(DbsSketchSkeleton)
-    ## Edit morphology coordinates button
     bpy.utils.register_class(DbsEditMorphologyCoordinates)
-    ## Morphology analysis button
     bpy.utils.register_class(DbsUpdateMorphologyCoordinates)
-    ## Export morphology as SWC file
     bpy.utils.register_class(DbsExportMorphologySWC)
-    ## Duplicate existing morphology
     bpy.utils.register_class(DuplicateMorphology)
-
+    bpy.utils.register_class(SetDuplicationBoundary)
 
 def unregister_panel():
     """Un-registers all the classes in this panel.
@@ -549,13 +730,9 @@ def unregister_panel():
     bpy.utils.unregister_class(DbsPositioningPanel)
 
     # Unregister Operators
-    ## Morphology analysis button
     bpy.utils.unregister_class(DbsSketchSkeleton)
-    ## Edit morphology coordinates button
     bpy.utils.unregister_class(DbsEditMorphologyCoordinates)
-    ## Update the coordinates
     bpy.utils.unregister_class(DbsUpdateMorphologyCoordinates)
-    ## Export the morphology
     bpy.utils.unregister_class(DbsExportMorphologySWC)
-    ## Duplicate existing morphology
     bpy.utils.unregister_class(DuplicateMorphology)
+    bpy.utils.unregister_class(SetDuplicationBoundary)

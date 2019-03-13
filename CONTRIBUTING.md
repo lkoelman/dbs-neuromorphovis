@@ -34,13 +34,20 @@ It uses the 'ensurepip' module packaged with Blender to install pip.
 ```sh
 cd /path/to/blender/python/bin
 ./python -m ensurepip
-./python -m pip install <package name>
+./python -m pip install ipython numpy
 ```
 
 # Debugging
 
 Start blender from terminal to see stdout and stderr (all output from print
 statements).
+
+The following lines simulate a breakpoint:
+
+```python
+import IPython
+IPython.embed()
+```
 
 # Code structure
 

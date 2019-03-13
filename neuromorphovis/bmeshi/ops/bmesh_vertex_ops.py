@@ -16,6 +16,7 @@
 ####################################################################################################
 
 # Blender imports
+import bpy.ops
 import bmesh
 
 
@@ -72,3 +73,14 @@ def extrude_vertex_towards_point(bmesh_object,
 
     # Return a reference to the extruded vertex
     return extruded_vertex
+
+
+def count_non_manifold_vertices(context):
+    """
+    Count non-manifold vertices in selected mesh.
+    Useful for detecting non-watertight meshes.
+    """
+    bpy.ops.mesh.select_non_manifold(extend=False, use_wire=True,
+                                     use_boundary=True, use_verts=True)
+    bm = bmesh.from_edit_mesh(context.edit_object.data)
+    return sum((1 for v in bm.verts if v.select))
