@@ -5,7 +5,7 @@ Install compatible version of Blender:
 
 Clone NeuroMorphoVis repository 
 
-```
+```sh
 git clone https://github.com/BlueBrain/NeuroMorphoVis.git
 cd NeuroMorphoVis
 git checkout -b mybranch
@@ -13,7 +13,7 @@ git checkout -b mybranch
 
 Link your repository into Blender addons directory
 
-```
+```sh
 # MacOS
 blender_dir=/Applications/Blender/blender.app/Contents/Resources/2.79/scripts/addons
 # Linux
@@ -34,7 +34,8 @@ It uses the 'ensurepip' module packaged with Blender to install pip.
 ```sh
 cd /path/to/blender/python/bin
 ./python -m ensurepip
-./python -m pip install ipython numpy
+./python -m pip install ipython
+./python -m pip install numpy --user # installs in ~/.local/lib/python3.X/site-packages/ so it doesn't conflict with packaged numpy in blender/2.XX/python/lib/python2.x/site-packages which cannot be imported
 ```
 
 # Debugging

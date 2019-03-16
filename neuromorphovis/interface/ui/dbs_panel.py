@@ -27,6 +27,9 @@ from bpy.props import (
 )
 import mathutils
 
+# External imports
+import numpy as np
+
 # Internal imports
 import neuromorphovis as nmv
 import neuromorphovis.edit
@@ -45,18 +48,12 @@ in_edit_mode = False
 # Debugging
 DEBUG = True
 
-def debug_log(*args, **kwargs):
+def DEBUG_LOG(*args, **kwargs):
     if DEBUG:
         print(*args, **kwargs)
 
-def debug_break():
-    """
-    HOWTO:
-    - install ipython using pip with bundled python
-    - exit or ctrl+d to continue
-    """
-    import IPython
-    IPython.embed()
+# DEBUG_BREAK:
+# import IPython; IPython.embed()
 
 # Info about currently loaded morphologies
 nmvif.ui_options.morphology.morphologies_loaded_directory = None
@@ -503,11 +500,11 @@ class DuplicateMorphology(bpy.types.Operator):
         Generate origin points for all cell duplicates.
 
         :return:
-            List of points
+            List of points, or empty array if points could not be made
         """
         layout_method = context.scene.DuplicationLayoutMethod # 'GRID' or 'RANDOM'
         density = context.scene.DuplicationDensity
-        max_dups = context.scene.MaxCellDuplicates
+        max_duplicates = context.scene.MaxCellDuplicates
 
         # Get bounding box of target volume
         bounds_obj = context.scene.objects[context.scene.DuplicationBoundaryName]
@@ -517,33 +514,56 @@ class DuplicateMorphology(bpy.types.Operator):
         xyz_max = bbox_corners.max(axis=0)
         # xyz_max = [max((corner[j] for corner in bbox_corners)) for j in range(3)]
 
+        # Coordinates are in micrometers, density in cells / mm^3
+        cell_per_um = 1e-3 * density ** (1./3.)
+
         # Generate coordinates in bounding box of boundary volume
         if layout_method == 'GRID':
-            cell_per_mm = int(density ** (1./3.))
             grid_samples = [] # one dimension (x/y/z) per row
             for i in range(3):
-                ncell = int(cell_per_mm * (xyz_max[i] - xyz_min[i]))
+                ncell = int(np.ceil(cell_per_um * (xyz_max[i] - xyz_min[i])))
+                if ncell == 0:
+                    self.report({'ERROR'}, 'Density too low along dimension ' +  'xyz'[i])
                 grid_samples.append(
                     np.linspace(xyz_min[i], xyz_max[i], num=ncell, endpoint=False))
+            # All coordinates in N x 3 matrix
             origins = np.array([co.ravel() for co in np.meshgrid(*grid_samples)]).T
         elif layout_method == 'RANDOM':
-            pass
+            bbox_dims = xyz_max - xyz_min
+            bbox_volume = np.prod(bbox_dims) # um^3
+            ncell = int(np.ceil(density * bbox_volume * 1e-9))
+            origins = np.random.random((ncell, 3))
+            for i in range(3):
+                origins[:,i] = origins[:,i] * bbox_dims[i] + xyz_min[i]
         else:
             raise ValueError('Unexpected layout method', layout_method)
+        
+        DEBUG_LOG('DBS: generated {} origin points for duplicates'.format(origins.shape[0]))
+        if origins.shape[0] == 0:
+            return np.array([])
 
-        # Prune points that are not inside boundary volume
-        inside_mask = np.zeros((max(origins.shape), 1), dtype=bool)
-        for i, pt in origins:
-            point, normal, face = bounds_obj.closest_point_on_mesh(pt, 1e12)
-            inside_mask[i] = (point-p).dot(normal) >= 0.0
+        # Remove points that are not inside boundary volume
+        inside_mask = np.zeros((origins.shape[0],), dtype=bool)
+        for i in range(origins.shape[0]):
+            dup_pt = mathutils.Vector(origins[i,:])
+            found, mesh_pt, normal, face_idx = bounds_obj.closest_point_on_mesh(dup_pt, 1e12)
+            mesh_pt = bounds_obj.matrix_world * mesh_pt # was in object space
+            inside_mask[i] = ((mesh_pt-dup_pt).dot(normal) >= 0.0) if found else False
+        DEBUG_LOG('DBS: {} origin points were inside boundary volume'.format(
+                    inside_mask.sum()))
+        origins_all = origins
         origins = origins[inside_mask, :]
 
         # Ensure we don't exceed maximum number of copies
         src_loc = np.array(source_object.location)
-        if origins.shape[0] > max_dups:
+        if origins.shape[0] > max_duplicates:
             # sort by distance from source location, keep closest
             dists = np.linalg.norm(origins - src_loc, axis=1)
+            sorted_idx = np.argsort(dists)
+            origins = origins[sorted_idx[:max_duplicates], :]
 
+        import IPython; IPython.embed()
+        DEBUG_LOG('DBS: {} origin points remaining after pruning'.format(origins.shape[0]))
         return origins
 
     ############################################################################
@@ -592,8 +612,13 @@ class DuplicateMorphology(bpy.types.Operator):
 
         # Get locations to place duplicates
         dup_origins = self.make_duplicate_origins(context, selected_object)
+        if dup_origins.size == 0:
+            self.report({'ERROR'}, 'No duplicates could be created with given '
+                                   'cell density and boundary volume.')
+            return {'FINISHED'}
 
         for dup_pt in dup_origins:
+            DEBUG_LOG('DBS: creating duplicate morphology ...')
 
             # Duplicate selected morphology
             duplicate_label = self.make_duplicate_label(selected_morphology)
@@ -620,7 +645,7 @@ class DuplicateMorphology(bpy.types.Operator):
 
             # [if morphology updated from geometry] Transform duplicated geometry
             for geom_obj in dup_geom_objs:
-                geom_obj.matrix_world = xform_mod * geom_obj.matrix_world
+                geom_obj.matrix_world = xform_mod # xform_mod * geom_obj.matrix_world
 
         return {'FINISHED'}
 
