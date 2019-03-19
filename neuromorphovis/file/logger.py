@@ -43,34 +43,37 @@ class Logger:
         """
 
         # Use the current working directory if no path is given
-        if path is None:
+        # if path is None:
+        #     # MAC
+        #     if str(platform.system()) == "Darwin":
+        #         self.path = os.getenv("HOME")
+        #     elif str(platform.system()) == "Windows":
+        #         self.path = os.path.dirname(os.path.realpath(__file__))
+        #     else:
+        #         self.path = os.getenv("HOME")
 
-            # MAC
-            if str(platform.system()) == "Darwin":
-                self.path = os.getenv("HOME")
-            elif str(platform.system()) == "Windows":
-                self.path = os.path.dirname(os.path.realpath(__file__))
-            else:
-                self.path = os.getenv("HOME")
-        else:
-            self.path = path
+        # NOTE: only create log file if path explicitly given
+        self.path = path
 
         # Print to the standard output stream
         self.print_stdout = print_stdout
 
         # Log file path
-        self.log_file_path = '%s/nmv.log' % self.path
-        print('Log file [%s]' % self.log_file_path)
+        if self.path is not None:
+            self.log_file_path = '%s/nmv.log' % self.path
+            print('Log file [%s]' % self.log_file_path)
 
-        # Open the log file in the write mode for the first time only
-        log_file = open(self.log_file_path, 'w')
+            # Open the log file in the write mode for the first time only
+            log_file = open(self.log_file_path, 'w')
+        else:
+            self.log_file_path = None
 
         # Starting message and time
-        log_file.write('NeuroMorphoVis - Marwan Abdellah (C) Blue Brain Project / EPFL \n')
-        log_file.write(datetime.datetime.now().strftime("%I:%M %p on %B %d, %Y\n"))
+        self.log('NeuroMorphoVis - Marwan Abdellah (C) Blue Brain Project / EPFL \n')
+        self.log(datetime.datetime.now().strftime("%I:%M %p on %B %d, %Y\n"))
 
-        # Close
-        log_file.close()
+        if self.log_file_path is not None:
+            log_file.close()
 
     ################################################################################################
     # @log
@@ -89,14 +92,15 @@ class Logger:
         if self.print_stdout:
             print(log_string.replace('(\'', '').replace('\',)', ''))
 
-        # Open the log file in the append mode.
-        log_file = open(self.log_file_path, 'a')
+        if self.log_file_path is not None:
+            # Open the log file in the append mode.
+            log_file = open(self.log_file_path, 'a')
 
-        # Append this message to the log string
-        log_file.write(log_string + '\n')
+            # Append this message to the log string
+            log_file.write(log_string + '\n')
 
-        # Close the log file
-        log_file.close()
+            # Close the log file
+            log_file.close()
 
     ################################################################################################
     # @line
@@ -107,17 +111,7 @@ class Logger:
 
         # Print the line message to stdout
         stars = '*******************************************************************************'
-        if self.print_stdout:
-            print(stars)
-
-        # Open the log file in the append mode.
-        log_file = open(self.log_file_path, 'a')
-
-        # Append this message to the log string
-        log_file.write(stars + '\n')
-
-        # Close the log file
-        log_file.close()
+        self.log(stars)
 
     ################################################################################################
     # @header

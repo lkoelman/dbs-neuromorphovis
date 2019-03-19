@@ -98,9 +98,33 @@ class SkeletonBuilder:
         """
         return self.morphology.label + '.' + name
 
-    ################################################################################################
+    ############################################################################
     # @create_skeleton_materials
-    ################################################################################################
+    ############################################################################
+    def get_skeleton_materials(self, name):
+        """
+        Get skeleton materials, while only creating them once.
+        """
+        skeleton_parts = ['soma', 'axon', 'basal_dendrites',
+                          'apical_dendrite', 'articulation']
+        if name in skeleton_parts:
+            # Get name of property containing the color
+            if name == 'articulation':
+                material_prefix = name
+            else:
+                material_prefix = name + '_skeleton'
+            # Get existing materials for part
+            materials = [m for m in bpy.data.materials if m.name.startswith(name)]
+            if len(materials) == 0:
+                materials = nmv.skeleton.ops.create_skeleton_materials(
+                    name=material_prefix,
+                    material_type=self.options.morphology.material,
+                    color=getattr(self.options.morphology, name + '_color'))
+            return materials
+        else:
+            return None
+    
+
     def create_skeleton_materials(self):
         """Creates the materials of the skeleton. The created materials are stored in private
         variables.
@@ -118,34 +142,19 @@ class SkeletonBuilder:
         #             bpy.data.materials.remove(material)
 
         # Soma
-        self.soma_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name=self.prefix_name('soma_skeleton'),
-            material_type=self.options.morphology.material,
-            color=self.options.morphology.soma_color)
+        self.soma_materials = self.get_skeleton_materials('soma')
 
         # Axon
-        self.axon_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name=self.prefix_name('axon_skeleton'),
-            material_type=self.options.morphology.material,
-            color=self.options.morphology.axon_color)
+        self.axon_materials = self.get_skeleton_materials('axon')
 
         # Basal dendrites
-        self.basal_dendrites_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name=self.prefix_name('basal_dendrites_skeleton'),
-            material_type=self.options.morphology.material,
-            color=self.options.morphology.basal_dendrites_color)
+        self.basal_dendrites_materials = self.get_skeleton_materials('basal_dendrites')
 
         # Apical dendrite
-        self.apical_dendrite_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name=self.prefix_name('apical_dendrite_skeleton'),
-            material_type=self.options.morphology.material,
-            color=self.options.morphology.apical_dendrites_color)
+        self.apical_dendrite_materials = self.get_skeleton_materials('apical_dendrites')
 
         # Articulations for the articulated reconstruction method
-        self.articulation_materials = nmv.skeleton.ops.create_skeleton_materials(
-            name=self.prefix_name('articulation'),
-            material_type=self.options.morphology.material,
-            color=self.options.morphology.articulation_color)
+        self.articulation_materials = self.get_skeleton_materials('articulation')
 
         # Create an illumination specific for the given material
         nmv.shading.create_material_specific_illumination(self.options.morphology.material)
@@ -1117,8 +1126,8 @@ class SkeletonBuilder:
         # performance since this is way better than creating a new material per section or segment
         self.create_skeleton_materials()
 
-        nmv.logger.header('Building skeleton')
         method = self.options.morphology.reconstruction_method
+        nmv.logger.header('Building skeleton with method {}'.format(method))
 
         #if False:
         #    morphology_objects.extend(self.draw_morphology_as_spheres(bevel_object=bevel_object))

@@ -137,11 +137,15 @@ def construct_swc_samples_list_from_soma(soma,
 
     # Soma profile points
     for i, profile_point in enumerate(soma.profile_points):
+        if soma.profile_radii is None:
+            radius = 1.0
+        else:
+            radius = soma.profile_radii[i]
         sample_string = '%d 1 %f %f %f %f 1' % (i + 2,
                                                 profile_point[0],
                                                 profile_point[1],
                                                 profile_point[2],
-                                                1.0)
+                                                radius)
         samples_list.append(sample_string)
 
 

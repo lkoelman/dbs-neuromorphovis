@@ -29,7 +29,8 @@ class Soma:
                  centroid,
                  mean_radius,
                  profile_points,
-                 arbors_profile_points=None):
+                 arbors_profile_points=None,
+                 profile_radii=None):
         """Constructor
 
         :param centroid:
@@ -40,6 +41,8 @@ class Soma:
             A list of the profile points that reflect its XY projection.
         :param arbors_profile_points:
             A list of profile points measured from the initial samples of the arbors.
+        :param profile_radii:
+            Radii for profile points in case they are sections from an SWC file
         """
 
         # Soma center (normally origin if local coordinates are used)
@@ -51,6 +54,7 @@ class Soma:
         # Soma profile points, they are typically ignored when reconstructing the soma on a
         # physically-plausible basis, but they can also used to make the soma more irregular
         self.profile_points = profile_points
+        self.profile_radii = profile_radii
 
         # The profile points of the arbors
         self.arbors_profile_points = arbors_profile_points

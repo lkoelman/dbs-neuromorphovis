@@ -18,6 +18,9 @@
 # System imports
 import copy
 
+# Blender imports
+from mathutils import Matrix
+
 # Internal imports
 import neuromorphovis as nmv
 import neuromorphovis.bbox
@@ -107,6 +110,9 @@ class Morphology:
         # Update the branching order
         self.update_branching_order()
 
+        # Transformation matrix for sample points
+        self.matrix_world = Matrix.Identity(4)
+
 
     def duplicate(self, label):
         """
@@ -122,7 +128,7 @@ class Morphology:
                     label=label)
 
 
-    def apply_transform(self, matrix):
+    def transform_sample_points(self, matrix):
         """
         Applies 4x4 transformation matrix to each sample point.
 
@@ -146,7 +152,8 @@ class Morphology:
             xform_pt(pt) for pt in self.soma.profile_points]
         if self.soma.arbors_profile_points is not None:
             self.soma.arbors_profile_points = [
-                xform_pt(pt) for pt in self.soma.arbors_profile_points]
+                xform_pt(pt) for pt in self.soma.arbors_profile_points
+            ]
 
         # Transform axon if exists
         if self.has_axon():
@@ -160,6 +167,8 @@ class Morphology:
         for basal_dendrite in self.dendrites:
             transform_subtree(basal_dendrite)
 
+        # Save new transformation matrix
+        self.matrix_world = matrix * self.matrix_world
 
     ################################################################################################
     # @has_axon

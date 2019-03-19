@@ -362,6 +362,7 @@ class SWCReader:
 
         # Get the soma profile points (contour)
         soma_profile_points = list()
+        soma_profile_radii = list()
 
         # Get the soma center and radius from the soma samples
         soma_centroid = Vector((0.0, 0.0, 0.0))
@@ -392,6 +393,7 @@ class SWCReader:
 
                 # Append the profile point to the list
                 soma_profile_points.append(soma_profile_point)
+                soma_profile_radii.append(sample[nmv.consts.Arbors.SWC_SAMPLE_RADIUS_IDX])
 
         # Get the arbors profiles points, that represent the root sample of each arbor
         soma_profile_points_on_arbors = list()
@@ -434,7 +436,9 @@ class SWCReader:
 
         # Construct the soma object
         soma_object = neuromorphovis.skeleton.Soma(
-            centroid=soma_centroid, mean_radius=soma_radius,  profile_points=soma_profile_points,
+            centroid=soma_centroid, mean_radius=soma_radius, 
+            profile_points=soma_profile_points,
+            soma_profile_radii=soma_profile_radii,
             arbors_profile_points=soma_profile_points_on_arbors)
 
         # Return a reference to the soma object

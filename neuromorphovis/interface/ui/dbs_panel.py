@@ -153,10 +153,14 @@ class DbsPositioningPanel(bpy.types.Panel):
         row_dup_maxnum.prop(context.scene, 'MaxCellDuplicates')
 
         ## Duplication - target volume
-        col_dup_button = layout.column(align=True)
-        col_dup_button.operator('set.duplication_boundary',
+        col_bound_btn = layout.column(align=True)
+        col_bound_btn.operator('set.duplication_boundary',
                                 text='Set boundary volume',
                                 icon='MESH_ICOSPHERE')
+
+        row_bound_label = layout.row()
+        # row_bound_label.label(text='Boundary:')
+        row_bound_label.prop(context.scene, 'DuplicationBoundaryName')
 
         ## Duplication - duplicate button
         col_dup_button = layout.column(align=True)
@@ -478,11 +482,15 @@ class DuplicateMorphology(bpy.types.Operator):
         """
         Generate a name for a duplicate cell.
         """
-        num_copies = 0
+        # Check if morphology is a copy (ends in '.<digits>')
         match = re.search(r'\.(\d+)$', morphology.label)
         if match:
             num_copies = int(match.groups()[0])
+        else:
+            num_copies = 0
+        # Increment digits to name the duplicate
         while True:
+            num_copies += 1
             if num_copies >= 1e6:
                 raise Exception('Too many duplicates.')
             elif num_copies >= 1e3:
@@ -492,7 +500,6 @@ class DuplicateMorphology(bpy.types.Operator):
             duplicate_label = morphology.label + suffix.format(num_copies)
             if not any((morph.label == duplicate_label for morph in nmvif.ui_morphologies)):
                 return duplicate_label
-            num_copies += 1
 
 
     def make_duplicate_origins(self, context, source_object):
@@ -562,7 +569,6 @@ class DuplicateMorphology(bpy.types.Operator):
             sorted_idx = np.argsort(dists)
             origins = origins[sorted_idx[:max_duplicates], :]
 
-        import IPython; IPython.embed()
         DEBUG_LOG('DBS: {} origin points remaining after pruning'.format(origins.shape[0]))
         return origins
 
@@ -617,12 +623,14 @@ class DuplicateMorphology(bpy.types.Operator):
                                    'cell density and boundary volume.')
             return {'FINISHED'}
 
-        for dup_pt in dup_origins:
-            DEBUG_LOG('DBS: creating duplicate morphology ...')
-
+        for i, dup_pt in enumerate(dup_origins):
             # Duplicate selected morphology
             duplicate_label = self.make_duplicate_label(selected_morphology)
+            DEBUG_LOG("DBS: creating duplicate morphology '{}'' ({}/{})".format(
+                       duplicate_label, i, dup_origins.shape[0]))
+
             dup_morphology = selected_morphology.duplicate(label=duplicate_label)
+            nmvif.ui_morphologies.append(dup_morphology)
 
             # Apply transformation to underlying morphology
             # xform = mathutils.Matrix.Translation(mathutils.Vector(
@@ -660,7 +668,7 @@ class SetDuplicationBoundary(bpy.types.Operator):
     bl_label = "Set boundary volume for cell duplicates"
 
     bpy.types.Scene.DuplicationBoundaryName = StringProperty(
-        name="DuplicationBoundaryName",
+        name="Boundary Volume",
         description="Name of object representing duplication boundary.",
         default='None')
 
@@ -681,7 +689,12 @@ class SetDuplicationBoundary(bpy.types.Operator):
                                 'Please select a watertight mesh as boundary.')
             return {'FINISHED'}
 
+        prev_mode = obj.mode
+        bpy.ops.object.mode_set(mode='EDIT')
         nvert_nonmanifold = nmv.bmeshi.ops.count_non_manifold_vertices(context)
+        bpy.ops.object.mode_set(mode=prev_mode)
+
+
         if nvert_nonmanifold > 0:
             self.report({'ERROR'}, 'Selected mesh is not watertight. '
                                  'Please select a watertight mesh as boundary.')
@@ -724,10 +737,29 @@ class DbsExportMorphologySWC(bpy.types.Operator):
             nmv.file.ops.clean_and_create_directory(
                 nmvif.ui_options.io.morphologies_directory)
 
-        # Export the reconstructed morphology as an .swc file
-        # FIXME: update to export selected or all morphologies
-        nmv.file.write_morphology_to_swc_file(
-            nmvif.ui_morphology, nmvif.ui_options.io.morphologies_directory)
+        # Get morphologies to export
+        selected_object = context.scene.objects.active
+        selected_morphology = get_morphology_from_object(selected_object)
+        if selected_morphology is not None:
+            # If specific morphology selected, export only that one
+            exported_morphologies = [selected_morphology]
+        else:
+            exported_morphologies = nmvif.ui_morphologies
+        
+        # Export the selected morphologies
+        for morphology in nmvif.ui_morphologies:
+            # Apply soma geometry transform to all sample points
+            soma_obj = next((obj for obj in nmvif.ui_reconstructed_skeletons[morphology.label]
+                                if 'soma' in obj.name), None)
+            if soma_obj is None:
+                self.report({'ERROR'}, 'Soma geometry not found for morphology {}'.format(
+                                        morphology.label))
+                return {'FINISHED'}
+            morphology.transform_sample_points(soma_obj.matrix_world)
+
+            # Write to SWC file
+            nmv.file.write_morphology_to_swc_file(morphology,
+                                    nmvif.ui_options.io.morphologies_directory)
 
         return {'FINISHED'}
 
