@@ -18,15 +18,13 @@
 # Blender imports
 import bpy
 from mathutils import Vector, Matrix
+import bmesh
 
 # Internal imports
 import neuromorphovis as nmv
 import neuromorphovis.scene
 
 
-####################################################################################################
-# @draw_cyclic_curve_from_points
-####################################################################################################
 def draw_cyclic_curve_from_points(curve_name,
                                   list_points):
     """Draw a cyclic poly curve form a list of points.
@@ -66,9 +64,63 @@ def draw_cyclic_curve_from_points(curve_name,
     return curve
 
 
-####################################################################################################
-# @draw_closed_circle
-####################################################################################################
+def draw_polyline_curve(name, vertices, curve_type='POLY',
+                        select=True, active=True):
+    """
+    Draw polyline as Curve geometry.
+    """
+    # Container for curve
+    curvedata = bpy.data.curves.new(name='curve_'+name, type='CURVE')
+    curvedata.dimensions = '3D'
+    if curve_type == 'NURBS':
+        curvedata.resolution_u = 2 
+
+    # Create the curve
+    polyline = curvedata.splines.new(curve_type)
+    polyline.points.add(len(vertices))
+    for i, coord in enumerate(vertices):
+        x,y,z = coord
+        polyline.points[i].co = (x, y, z, 1)
+    if curve_type == 'NURBS':
+        polyline.order_u = len(polyline.points)-1
+        polyline.use_endpoint_u = True
+
+    # create Object
+    curveOB = bpy.data.objects.new(name, curvedata)
+
+    # attach to scene and validate context
+    bpy.context.scene.objects.link(curveOB)
+    bpy.context.scene.objects.active = curveOB
+    curveOB.select = select
+
+    return curveOB
+
+
+def draw_polyline_mesh(name, vertices, select=True, active=True):
+    """
+    Draw polyline as Mesh edge.
+    """
+    bm = bmesh.new()
+
+    for i in range(len(vertices)-1):
+        bm.edges.new([vertices[i], vertices[i+1]])
+
+    # Create Mesh object to add to scene
+    me = bpy.data.meshes.new('mesh_'+name)
+    mesh_obj = bpy.data.objects.new(name, me)
+    bpy.context.scene.objects.link(mesh_obj)
+
+    # Store bmesh geometry in Mesh object
+    bm.to_mesh(me)
+    bm.free()
+
+    if active:
+        bpy.context.scene.objects.active = mesh_obj
+    mesh_obj.select = select
+
+    return mesh_obj
+
+
 def draw_closed_circle(radius=1,
                        location=Vector((0, 0, 0)),
                        vertices=4,
