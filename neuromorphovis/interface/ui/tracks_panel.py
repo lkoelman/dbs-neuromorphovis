@@ -8,13 +8,11 @@ Panel for importing streamlines generated using diffusion tractography.
 
 # Python imports
 import os
+import pickle
 
 # Blender imports
 import bpy
-from bpy.props import (
-    BoolProperty, FloatProperty, IntProperty,
-    StringProperty, EnumProperty
-)
+from bpy.props import FloatProperty, IntProperty, StringProperty
 
 # External imports
 import numpy as np
@@ -22,12 +20,18 @@ import nibabel as nib
 
 # Internal imports
 import neuromorphovis as nmv
-import neuromorphovis.edit
-import neuromorphovis.interface as nmvif
 import neuromorphovis.scene
+
+
+################################################################################
+# State variables
+################################################################################
 
 # Debugging
 DEBUG = True
+
+# Groups of imported streamlines
+_tck_groups = {}
 
 ################################################################################
 # UI elements
@@ -44,39 +48,53 @@ class StreamlinesPanel(bpy.types.Panel):
     bl_region_type = 'TOOLS'
     bl_label = 'Track Positioning'
     bl_category = 'NeuroMorphoVis'
-    # bl_options = {'DEFAULT_CLOSED'}
+    bl_options = {'DEFAULT_CLOSED'}
 
     # --------------------------------------------------------------------------
     # Properties for UI state
 
-    ## Properties: morphology import
-    default_dir = "/home/luye/Downloads/morphologies" if DEBUG else "Select Directory"
-    bpy.types.Scene.MorphologiesDirectory = StringProperty(
-        name="Morphologies",
-        description="Select a directory to mesh all the morphologies in it",
-        default=default_dir, maxlen=2048, subtype='DIR_PATH')
-
     # Streamlines file
+    debug_tck_file = '/home/luye/Documents/mri_data/Waxholm_rat_brain_atlas/WHS_DTI/S56280_1e4tracks.tck'
+    default_tck_file = debug_tck_file if DEBUG else 'Select File'
     bpy.types.Scene.StreamlinesFile = StringProperty(
         name="Streamlines File",
         description="Select streamlines file",
-        default='Select File', maxlen=2048,  subtype='FILE_PATH')
+        default=default_tck_file, maxlen=2048,  subtype='FILE_PATH')
 
-    # Output directory
     bpy.types.Scene.StreamlinesOutputDirectory = StringProperty(
         name="Output Directory",
         description="Select a directory where the results will be generated",
         default="Select Directory", maxlen=5000, subtype='DIR_PATH')
 
+    bpy.types.Scene.StreamlinesOutputFileName = StringProperty(
+        name="Output Filename",
+        description="Select file name for axon groups.",
+        default="axon_groups")
+
+    bpy.types.Scene.ProjectionPrePopLabel = StringProperty(
+        name="Pre-synaptic Label",
+        description="Label for pre-synaptic population of projection.",
+        default="PRE")
+
+    bpy.types.Scene.ProjectioPostPopLabel = StringProperty(
+        name="Post-synaptic label",
+        description="Label for post-synaptic population of projection.",
+        default="POST")
+
     bpy.types.Scene.MaxLoadStreamlines = IntProperty(
         name="Max Streamlines",
         description="Maximum number of loaded streamlines",
-        default=500, min=1, max=10000)
+        default=100, min=1, max=10000)
 
     bpy.types.Scene.MinStreamlineLength = FloatProperty(
         name="Min Length",
         description="Minimum streamline length (mm)",
         default=1.0, min=1.0, max=1e6)
+
+    bpy.types.Scene.StreamlineUnitScale = FloatProperty(
+        name="Scale",
+        description="Streamline scale relative to microns (units/um)",
+        default=1e3, min=1e-12, max=1e12)
 
 
     # --------------------------------------------------------------------------
@@ -105,11 +123,38 @@ class StreamlinesPanel(bpy.types.Panel):
         output_directory_row.prop(scene, 'StreamlinesOutputDirectory')
 
         # Import Options -------------------------------------------------------
+
+        # labels for PRE and POST synaptic populations
+        row_pops_header = layout.row()
+        row_pops_header.column(align=True).label(text='Pre-syn.')
+        row_pops_header.column(align=True).label(text='Post-syn.')
+
+        row_pops_fields = layout.row()
+        row_pops_fields.column(align=True).prop(
+            context.scene, 'ProjectionPrePopLabel', text='')
+        row_pops_fields.column(align=True).prop(
+            context.scene, 'ProjectioPostPopLabel', text='')
+
         row_max_load = layout.row()
         row_max_load.prop(context.scene, 'MaxLoadStreamlines')
 
         row_min_length = layout.row()
         row_min_length.prop(context.scene, 'MinStreamlineLength')
+
+        row_scale =layout.row()
+        row_scale.prop(context.scene, 'StreamlineUnitScale')
+
+        # Draw Streamlines
+        col_sketch = layout.column(align=True)
+        col_sketch.operator('sketch.streamlines',
+                                icon='MOD_PARTICLES')
+
+        # Saving morphology options
+        row_export = layout.row()
+        row_export.label(text='Export Streamlines:', icon='LIBRARY_DATA_DIRECT')
+
+        col_export = layout.column(align=True)
+        col_export.operator('export.streamlines', icon='SAVE_COPY')
 
 ################################################################################
 # Operators
@@ -117,8 +162,10 @@ class StreamlinesPanel(bpy.types.Panel):
 
 class ImportStreamlines(bpy.types.Operator):
     """
-    Repair the morphology skeleton (as volumetric mesh),
-    detect the artifacts and fix them.
+    Import streamlines from tractography file.
+
+    See https://nipy.org/nibabel/reference/nibabel.streamlines.html
+    for supported formats.
     """
 
     # Operator parameters
@@ -136,46 +183,101 @@ class ImportStreamlines(bpy.types.Operator):
         """
 
         # Load the streamlines
-        streamlines = load_streamlines(context.scene.StreamlinesOutputDirectory)
+        streamlines = load_streamlines(context.scene.StreamlinesFile,
+                        max_num=context.scene.MaxLoadStreamlines,
+                        min_length=context.scene.MinStreamlineLength)
         if streamlines is None:
             self.report({'ERROR'}, 'Invalid streamlines file.')
             return {'FINISHED'}
 
         # TODO: convert to polylines
         fname_base, ext = os.path.splitext(os.path.split(context.scene.StreamlinesFile)[1])
+        group_name = "{}-to-{}_tck-{}".format(context.scene.ProjectionPrePopLabel,
+                        context.scene.ProjectionPostPopLabel, fname_base)
+        tck_group = bpy.data.groups.get(group_name, bpy.data.groups.new(group_name))
         for tck_coords in streamlines:
-            crv_obj = nmv.geometry.draw_polyline_curve('Streamline', tck_coords,
+            tck_name = 'tck_' + fname_base # copies are numbered by Blender
+            coords_micron = tck_coords * context.scene.StreamlineUnitScale
+            crv_obj = nmv.geometry.draw_polyline_curve(tck_name, coords_micron,
                                                         curve_type='POLY')
+            tck_group.objects.link(crv_obj)
 
-        # TODO: save references to objects
+        # Save references to objects
+        _tck_groups[tck_group.name] = tck_group
         return {'FINISHED'}
 
 
-def load_streamlines(file_path, max_num, min_length):
+class ExportStreamlines(bpy.types.Operator):
+    """
+    Import streamlines from tractography file.
+
+    See https://nipy.org/nibabel/reference/nibabel.streamlines.html
+    for supported formats.
+    """
+
+    # Operator parameters
+    bl_idname = "export.streamlines"
+    bl_label = "Export Streamlines"
+
+
+    def execute(self, context):
+        """
+        Execute the operator.
+
+        :param context:
+            Rendering context
+        :return:
+            'FINISHED'
+        """
+        # Just export raw streamlines, metadata should be in config file
+        tck_data = {
+            name: track_group_coordinates(grp) for name, grp in _tck_groups.items()
+        }
+
+
+        # TODO: save as pickle to selected path
+        out_dir = context.scene.StreamlinesOutputDirectory
+        out_fname = context.scene.StreamlinesOutputFileName
+        out_fpath = os.path.join(out_dir, out_fname + '.pkl')
+        with open(out_fpath, "wb") as f:
+            pickle.dump(tck_data, f)
+        return {'FINISHED'}
+
+
+def load_streamlines(file_path, max_num=1e12, min_length=0.0):
     """
     Load streamlines from file
     """
-    with open(file_path, 'r') as tracts_file:
-        tck_file = nib.streamlines.load(tracts_file, lazy_load=True)
+    tck_file = nib.streamlines.load(file_path, lazy_load=True)
 
-        # Make sure tracts are defined in RAS+ world coordinate system
-        tractogram = tck_file.tractogram.to_world(lazy=True)
+    # Make sure tracts are defined in RAS+ world coordinate system
+    tractogram = tck_file.tractogram.to_world(lazy=True)
 
-        # Manual transformation to RAS+ world coordinate system
-        # vox2ras = tck_file.tractogram.affine_to_rasmm
-        # tck_ras_coords = nib.affines.apply_affine(vox2ras, streamline)
+    # Manual transformation to RAS+ world coordinate system
+    # vox2ras = tck_file.tractogram.affine_to_rasmm
+    # tck_ras_coords = nib.affines.apply_affine(vox2ras, streamline)
 
-        streamlines_filtered = []
-        for i, streamline in enumerate(tractogram.streamlines): # lazy-loading generator
-            # streamline is (N x 3) matrix
-            if len(streamlines_filtered) > max_num:
-                break
-            # check length
+    streamlines_filtered = []
+    for i, streamline in enumerate(tractogram.streamlines): # lazy-loading generator
+        # streamline is (N x 3) matrix
+        if len(streamlines_filtered) >= max_num:
+            break
+        # check length
+        if min_length > 0:
             tck_len = np.sum(np.linalg.norm(np.diff(streamline, axis=0), axis=1))
-            if tck_len >= min_length:
-                streamlines_filtered.append(streamline)
+        else:
+            tck_len = 1.0
+        if tck_len >= min_length:
+            streamlines_filtered.append(streamline)
 
-        return streamlines_filtered
+    return streamlines_filtered
+
+
+def track_group_coordinates(group_obj):
+    """
+    TODO: Convert Blender group of curves to list of coordinate arrays.
+    """
+    pass
 
 
 def register_panel():
@@ -183,6 +285,8 @@ def register_panel():
     Registers all the classes in this panel.
     """
     bpy.utils.register_class(StreamlinesPanel)
+    bpy.utils.register_class(ImportStreamlines)
+    bpy.utils.register_class(ExportStreamlines)
 
 
 def unregister_panel():
@@ -190,3 +294,5 @@ def unregister_panel():
     Un-registers all the classes in this panel.
     """
     bpy.utils.unregister_class(StreamlinesPanel)
+    bpy.utils.unregister_class(ImportStreamlines)
+    bpy.utils.unregister_class(ExportStreamlines)

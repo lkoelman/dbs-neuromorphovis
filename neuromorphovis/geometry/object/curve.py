@@ -77,7 +77,7 @@ def draw_polyline_curve(name, vertices, curve_type='POLY',
 
     # Create the curve
     polyline = curvedata.splines.new(curve_type)
-    polyline.points.add(len(vertices))
+    polyline.points.add(len(vertices)-1)
     for i, coord in enumerate(vertices):
         x,y,z = coord
         polyline.points[i].co = (x, y, z, 1)
@@ -86,17 +86,18 @@ def draw_polyline_curve(name, vertices, curve_type='POLY',
         polyline.use_endpoint_u = True
 
     # create Object
-    curveOB = bpy.data.objects.new(name, curvedata)
+    curve_obj = bpy.data.objects.new(name, curvedata)
 
     # attach to scene and validate context
-    bpy.context.scene.objects.link(curveOB)
-    bpy.context.scene.objects.active = curveOB
-    curveOB.select = select
+    bpy.context.scene.objects.link(curve_obj)
+    bpy.context.scene.objects.active = curve_obj
+    bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS') # ORIGIN_CENTER_OF_MASS
 
-    return curveOB
+    curve_obj.select = select
+    return curve_obj
 
 
-def draw_polyline_mesh(name, vertices, select=True, active=True):
+def draw_polyline_mesh(name, vertices, select=True):
     """
     Draw polyline as Mesh edge.
     """
@@ -106,18 +107,19 @@ def draw_polyline_mesh(name, vertices, select=True, active=True):
         bm.edges.new([vertices[i], vertices[i+1]])
 
     # Create Mesh object to add to scene
-    me = bpy.data.meshes.new('mesh_'+name)
-    mesh_obj = bpy.data.objects.new(name, me)
+    mesh_geom = bpy.data.meshes.new('mesh_'+name)
+    mesh_obj = bpy.data.objects.new(name, mesh_geom)
     bpy.context.scene.objects.link(mesh_obj)
 
     # Store bmesh geometry in Mesh object
-    bm.to_mesh(me)
+    bm.to_mesh(mesh_geom)
     bm.free()
 
-    if active:
-        bpy.context.scene.objects.active = mesh_obj
-    mesh_obj.select = select
+    # Set the origin
+    bpy.context.scene.objects.active = mesh_obj
+    bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS') # ORIGIN_CENTER_OF_MASS
 
+    mesh_obj.select = select
     return mesh_obj
 
 

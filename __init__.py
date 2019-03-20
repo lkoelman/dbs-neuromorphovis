@@ -75,6 +75,7 @@ if "bpy" in locals():
     import neuromorphovis.interface.ui.edit_panel
     import neuromorphovis.interface.ui.dbs_panel
     import neuromorphovis.interface.ui.tracks_panel
+    import neuromorphovis.interface.ui.circuits_panel
     import neuromorphovis.interface.ui.soma_panel
     import neuromorphovis.interface.ui.morphology_panel
     import neuromorphovis.interface.ui.mesh_panel
@@ -86,6 +87,7 @@ if "bpy" in locals():
     imp.reload(neuromorphovis.interface.ui.edit_panel)
     imp.reload(neuromorphovis.interface.ui.dbs_panel)
     imp.reload(neuromorphovis.interface.ui.tracks_panel)
+    imp.reload(neuromorphovis.interface.ui.circuits_panel)
     imp.reload(neuromorphovis.interface.ui.morphology_panel)
     imp.reload(neuromorphovis.interface.ui.mesh_panel)
 
@@ -97,6 +99,7 @@ else:
     import neuromorphovis.interface.ui.edit_panel
     import neuromorphovis.interface.ui.dbs_panel
     import neuromorphovis.interface.ui.tracks_panel
+    import neuromorphovis.interface.ui.circuits_panel
     import neuromorphovis.interface.ui.soma_panel
     import neuromorphovis.interface.ui.morphology_panel
     import neuromorphovis.interface.ui.mesh_panel
@@ -118,6 +121,7 @@ def register():
     neuromorphovis.interface.ui.mesh_panel.register_panel()
     neuromorphovis.interface.ui.dbs_panel.register_panel()
     neuromorphovis.interface.ui.tracks_panel.register_panel()
+    neuromorphovis.interface.ui.circuits_panel.register_panel()
 
 
 ####################################################################################################
@@ -135,6 +139,7 @@ def unregister():
     neuromorphovis.interface.ui.morphology_panel.unregister_panel()
     neuromorphovis.interface.ui.dbs_panel.unregister_panel()
     neuromorphovis.interface.ui.tracks_panel.unregister_panel()
+    neuromorphovis.interface.ui.circuits_panel.unregister_panel()
 
 
 ####################################################################################################

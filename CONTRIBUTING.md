@@ -36,6 +36,7 @@ cd /path/to/blender/python/bin
 ./python -m ensurepip
 ./python -m pip install ipython
 ./python -m pip install numpy --user # installs in ~/.local/lib/python3.X/site-packages/ so it doesn't conflict with packaged numpy in blender/2.XX/python/lib/python2.x/site-packages which cannot be imported
+./python -m pip install nibabel
 ```
 
 # Debugging
@@ -43,11 +44,10 @@ cd /path/to/blender/python/bin
 Start blender from terminal to see stdout and stderr (all output from print
 statements).
 
-The following lines simulate a breakpoint:
+The following line simulate a breakpoint:
 
 ```python
-import IPython
-IPython.embed()
+import IPython; IPython.embed()
 ```
 
 # Code structure
