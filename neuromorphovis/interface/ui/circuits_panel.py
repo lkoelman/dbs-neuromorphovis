@@ -91,22 +91,6 @@ class DefinePopulation(bpy.types.Operator):
     bl_label = "Define cell population"
 
 
-class SetAxonPreCell(bpy.types.Operator):
-    """
-    TODO: operator SetAxonPreCell
-    """
-    bl_idname = "set_axon.pre"
-    bl_label = "Set pre-synaptic cell for axon"
-
-
-class SetAxonPostCell(bpy.types.Operator):
-    """
-    TODO: operator SetAxonPostCell
-    """
-    bl_idname = "set_axon.post"
-    bl_label = "Set post-synaptic cell for axon"
-
-
 class ExportCircuit(bpy.types.Operator):
     """
     TODO: operator ExportCircuit
@@ -115,10 +99,13 @@ class ExportCircuit(bpy.types.Operator):
     bl_label = "Save circuit definition to file"
 
 
+################################################################################
+# GUI Registration
+################################################################################
+
 # Classes to register with Blender
 _reg_classes = [
-    CircuitsPanel, DefinePopulation, SetAxonPreCell, SetAxonPostCell,
-    ExportCircuit
+    CircuitsPanel, DefinePopulation, ExportCircuit
 ]
 
 

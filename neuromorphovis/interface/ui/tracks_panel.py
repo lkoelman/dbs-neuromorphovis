@@ -21,6 +21,7 @@ import nibabel as nib
 # Internal imports
 import neuromorphovis as nmv
 import neuromorphovis.scene
+import neuromorphovis.interface as nmvif
 
 
 ################################################################################
@@ -32,6 +33,47 @@ DEBUG = True
 
 # Groups of imported streamlines
 _tck_groups = {}
+
+
+################################################################################
+# Support functions
+################################################################################
+
+def load_streamlines(file_path, max_num=1e12, min_length=0.0):
+    """
+    Load streamlines from file
+    """
+    tck_file = nib.streamlines.load(file_path, lazy_load=True)
+
+    # Make sure tracts are defined in RAS+ world coordinate system
+    tractogram = tck_file.tractogram.to_world(lazy=True)
+
+    # Manual transformation to RAS+ world coordinate system
+    # vox2ras = tck_file.tractogram.affine_to_rasmm
+    # tck_ras_coords = nib.affines.apply_affine(vox2ras, streamline)
+
+    streamlines_filtered = []
+    for i, streamline in enumerate(tractogram.streamlines): # lazy-loading generator
+        # streamline is (N x 3) matrix
+        if len(streamlines_filtered) >= max_num:
+            break
+        # check length
+        if min_length > 0:
+            tck_len = np.sum(np.linalg.norm(np.diff(streamline, axis=0), axis=1))
+        else:
+            tck_len = 1.0
+        if tck_len >= min_length:
+            streamlines_filtered.append(streamline)
+
+    return streamlines_filtered
+
+
+def track_group_coordinates(group_obj):
+    """
+    TODO: Convert Blender group of curves to list of coordinate arrays.
+    """
+    pass
+
 
 ################################################################################
 # UI elements
@@ -182,7 +224,7 @@ class ImportStreamlines(bpy.types.Operator):
             'FINISHED'
         """
 
-        # Load the streamlines
+        # Load the streamlines as N x 3 arrays
         streamlines = load_streamlines(context.scene.StreamlinesFile,
                         max_num=context.scene.MaxLoadStreamlines,
                         min_length=context.scene.MinStreamlineLength)
@@ -190,7 +232,7 @@ class ImportStreamlines(bpy.types.Operator):
             self.report({'ERROR'}, 'Invalid streamlines file.')
             return {'FINISHED'}
 
-        # TODO: convert to polylines
+        # convert to Blender polyline curves
         fname_base, ext = os.path.splitext(os.path.split(context.scene.StreamlinesFile)[1])
         group_name = "{}-to-{}_tck-{}".format(context.scene.ProjectionPrePopLabel,
                         context.scene.ProjectionPostPopLabel, fname_base)
@@ -234,8 +276,7 @@ class ExportStreamlines(bpy.types.Operator):
             name: track_group_coordinates(grp) for name, grp in _tck_groups.items()
         }
 
-
-        # TODO: save as pickle to selected path
+        # save as pickle to selected path
         out_dir = context.scene.StreamlinesOutputDirectory
         out_fname = context.scene.StreamlinesOutputFileName
         out_fpath = os.path.join(out_dir, out_fname + '.pkl')
@@ -244,55 +285,101 @@ class ExportStreamlines(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def load_streamlines(file_path, max_num=1e12, min_length=0.0):
+class SetAxonPreCell(bpy.types.Operator):
     """
-    Load streamlines from file
+    Operator SetAxonPreCell
     """
-    tck_file = nib.streamlines.load(file_path, lazy_load=True)
+    bl_idname = "set_axon.pre"
+    bl_label = "Set pre-synaptic cell for axon"
 
-    # Make sure tracts are defined in RAS+ world coordinate system
-    tractogram = tck_file.tractogram.to_world(lazy=True)
+    def execute(self, context):
+        """
+        Execute the operator.
 
-    # Manual transformation to RAS+ world coordinate system
-    # vox2ras = tck_file.tractogram.affine_to_rasmm
-    # tck_ras_coords = nib.affines.apply_affine(vox2ras, streamline)
+        :param context:
+            Rendering context
+        :return:
+            'FINISHED'
+        """
+        # Get blender objects representing neuron and axon
+        selected = list(context.selected_objects)
+        cell_obj = next((obj for obj in selected if 'neuron_morphology_name' in obj.keys()), None)
+        if cell_obj is None:
+            self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
+            return {'FINISHED'}
+        axon_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
+        if axon_obj is None:
+            self.report({'ERROR'}, 'Please select at least one axon curve.')
+            return {'FINISHED'}
 
-    streamlines_filtered = []
-    for i, streamline in enumerate(tractogram.streamlines): # lazy-loading generator
-        # streamline is (N x 3) matrix
-        if len(streamlines_filtered) >= max_num:
-            break
-        # check length
-        if min_length > 0:
-            tck_len = np.sum(np.linalg.norm(np.diff(streamline, axis=0), axis=1))
-        else:
-            tck_len = 1.0
-        if tck_len >= min_length:
-            streamlines_filtered.append(streamline)
+        # Get the morphology object
+        cell_morph = nmvif.dbs_panel.get_morphology_from_object(cell_obj)
 
-    return streamlines_filtered
+        # Set pre-synaptic cell GID
+        axon_obj['presynaptic_cell_GID'] = cell_morph.gid
+        axon_obj['presynaptic_cell_name'] = cell_morph.label
+
+        return {'FINISHED'}
 
 
-def track_group_coordinates(group_obj):
+class SetAxonPostCell(bpy.types.Operator):
     """
-    TODO: Convert Blender group of curves to list of coordinate arrays.
+    Operator SetAxonPostCell
     """
-    pass
+    bl_idname = "set_axon.post"
+    bl_label = "Set post-synaptic cell for axon"
+
+    def execute(self, context):
+        """
+        Execute the operator.
+
+        :param context:
+            Rendering context
+        :return:
+            'FINISHED'
+        """
+        # Get blender objects representing neuron and axon
+        axon_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
+        if axon_obj is None:
+            self.report({'ERROR'}, 'Please select at least one axon curve.')
+            return {'FINISHED'}
+
+        # Get cell GID of all selected object that represent neuron geometry
+        post_cell_gids = set((obj['neuron_morphology_gid'] for obj in selected
+                                if 'neuron_morphology_gid' in obj.keys()))
+        if len(post_cell_gids) == 0:
+            self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
+            return {'FINISHED'}
+
+        # Set pre-synaptic cell GID
+        old_post_gids = set(axon_obj.get('postsynaptic_cell_GIDs', []))
+        axon_obj['postsynaptic_cell_GIDs'] = sorted(old_post_gids.union(post_cell_gids))
+
+        return {'FINISHED'}
+
+
+################################################################################
+# GUI Registration
+################################################################################
+
+
+# Classes to register with Blender
+_reg_classes = [
+    StreamlinesPanel, ImportStreamlines, ExportStreamlines
+]
 
 
 def register_panel():
     """
     Registers all the classes in this panel.
     """
-    bpy.utils.register_class(StreamlinesPanel)
-    bpy.utils.register_class(ImportStreamlines)
-    bpy.utils.register_class(ExportStreamlines)
+    for cls in _reg_classes:
+        bpy.utils.register_class(cls)
 
 
 def unregister_panel():
     """
     Un-registers all the classes in this panel.
     """
-    bpy.utils.unregister_class(StreamlinesPanel)
-    bpy.utils.unregister_class(ImportStreamlines)
-    bpy.utils.unregister_class(ExportStreamlines)
+    for cls in _reg_classes:
+        bpy.utils.unregister_class(cls)

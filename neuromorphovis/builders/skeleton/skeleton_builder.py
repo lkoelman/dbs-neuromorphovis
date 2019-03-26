@@ -1239,6 +1239,11 @@ class SkeletonBuilder:
                 if obj.name not in group.objects:
                     group.objects.link(obj)
 
+        # Save morphology name and gid on each geometry
+        for obj in morphology_objects:
+            obj['neuron_morphology_name'] = self.morphology.label
+            obj['neuron_morphology_gid'] = self.morphology.gid
+
         # Return the list of the drawn morphology objects
         return morphology_objects
 

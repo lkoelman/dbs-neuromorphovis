@@ -35,6 +35,9 @@ class Morphology:
     A class to represent the morphological skeleton of a tree structure, for example neuron.
     """
 
+    # For assigning new GIDs to morphologies
+    gid_counter = 0
+
     ################################################################################################
     # @__init__
     ################################################################################################
@@ -88,6 +91,9 @@ class Morphology:
         self.origin_apical_dendrite = copy.deepcopy(apical_dendrite)
 
         # Morphology GID
+        if gid is None:
+            Morphology.gid_counter += 1
+            gid = Morphology.gid_counter
         self.gid = gid
 
         # Morphology type
