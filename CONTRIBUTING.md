@@ -78,3 +78,12 @@ neuromorphovis.interface.ui_morphologies # list(nmv.skeleton.structure.Morpholog
 neuromorphovis.interface.ui_reconstructed_skeletons # dict[str, list()]
 # `-> stores Blender geometry corresponding to each morphology (by label)
 ```
+
+# Useful Blender commands
+
+Useful commands, search using spacebar menu.
+
+- `View Selected` : does what it says
+
+- Don't clip large / far-away objects:
+    - `View > Properties > View > Clip: End` > set to higher value

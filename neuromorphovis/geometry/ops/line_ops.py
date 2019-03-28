@@ -208,11 +208,15 @@ def draw_poly_line(poly_line_data,
                    material=None,
                    color=None,
                    bevel_object=None,
-                   caps=True):
+                   caps=True,
+                   poly_line_radii=None):
     """Draw a poly line (connected segments of lines) with multiple formats.
 
     :param poly_line_data:
         The data of the poly-line such as its points and radii.
+    :param poly_line_radii:
+        Radius associated with each poly-line point (float or list of floats).
+        If left empty, assumes poly_line_data contains tuples (point, radius)
     :param format:
         The format can be SIMPLE or SOLID.
     :param name:
@@ -284,10 +288,23 @@ def draw_poly_line(poly_line_data,
     poly_line_strip = line_data.splines.new('POLY')
     poly_line_strip.points.add(len(poly_line_data) - 1)
 
+    # Get poinst and radius associated with each point
+    if poly_line_radii is None:
+        pts, radii = zip(*poly_line_data)
+    else:
+        pts = poly_line_data
+        if isinstance(poly_line_radii, (float, int)):
+            radii = [poly_line_radii] * len(poly_line_data)
+        else:
+            radii = poly_line_radii
+
     # Add the points (or the samples) and their radii to the poly-line curve
-    for i, point in enumerate(poly_line_data):
-        poly_line_strip.points[i].co = point[0]
-        poly_line_strip.points[i].radius = point[1]
+    for i, point in enumerate(pts):
+        if len(point) == 4:
+            poly_line_strip.points[i].co = point
+        else:
+            poly_line_strip.points[i].co = (point[0], point[1], point[2], 1.0)
+        poly_line_strip.points[i].radius = radii[i]
 
     # Create a curve that uses the curve_data.
     line_strip = bpy.data.objects.new(str(name), line_data)

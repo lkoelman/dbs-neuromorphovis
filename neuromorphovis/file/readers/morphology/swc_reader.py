@@ -438,7 +438,7 @@ class SWCReader:
         soma_object = neuromorphovis.skeleton.Soma(
             centroid=soma_centroid, mean_radius=soma_radius, 
             profile_points=soma_profile_points,
-            soma_profile_radii=soma_profile_radii,
+            profile_radii=soma_profile_radii,
             arbors_profile_points=soma_profile_points_on_arbors)
 
         # Return a reference to the soma object

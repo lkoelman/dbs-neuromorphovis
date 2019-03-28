@@ -445,8 +445,7 @@ class DbsUpdateMorphologyCoordinates(bpy.types.Operator):
 
 class DuplicateMorphology(bpy.types.Operator):
     """
-    Make duplicates of selected morphology and optionally
-    distribute them in space.
+    Make duplicates of selected morphology and distribute them in space.
     """
 
     # Operator parameters

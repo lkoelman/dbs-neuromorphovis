@@ -28,8 +28,11 @@ import neuromorphovis.interface as nmvif
 # State variables
 ################################################################################
 
-# Debugging
+# Constants
 DEBUG = True
+STREAMLINE_MATERIAL_NAME = 'streamline_mat_1'
+GROUPNAME_HELPER_GEOMETRY = 'Helper Geometry'
+GROUPNAME_ROI_VOLUMES = 'ROI Volumes'
 
 # Groups of imported streamlines
 _tck_groups = {}
@@ -70,9 +73,110 @@ def load_streamlines(file_path, max_num=1e12, min_length=0.0):
 
 def track_group_coordinates(group_obj):
     """
-    TODO: Convert Blender group of curves to list of coordinate arrays.
+    Convert Blender group of curves to list of coordinate lists.
     """
-    pass
+    curves_pts = []
+    for curve_obj in group_obj.objects:
+        if curve_obj.type != 'CURVE':
+            continue
+        crv_geom = curve_obj.data.splines[0]
+        num_pts = len(crv_geom.points)
+        curves_pts.append([crv_geom.points[i].co[0:3] for i in range(num_pts)])
+    return curves_pts
+
+
+def get_streamline_material():
+    """
+    Get skeleton materials, while only creating them once.
+    """
+    mat = bpy.data.materials.get(STREAMLINE_MATERIAL_NAME, None)
+    if mat is None:
+        current_scene = bpy.context.scene
+        if not current_scene.render.engine == 'BLENDER_RENDER':
+            current_scene.render.engine = 'BLENDER_RENDER'
+
+        # Create a new material
+        mat = bpy.data.materials.new(STREAMLINE_MATERIAL_NAME)
+
+        # Set the diffuse parameters
+        mat.diffuse_color = [1.0, 0.707, 0.014] # yellow
+        mat.diffuse_shader = 'LAMBERT'
+        mat.diffuse_intensity = 0.8
+
+        # Set the specular parameters (leave default)
+        # mat.specular_color = [1.0, 1.0, 1.0]
+        # mat.specular_shader = 'WARDISO'
+        # mat.specular_intensity = 0.5
+
+        # 'Transparency' menu parameters
+        mat.alpha = 1.0
+
+        # 'Shading' menu parameters
+        mat.ambient = 1.0
+        mat.emit = 0.0 # positive for 'glowing' effect
+    return mat
+
+
+def get_streamline_bevel_profile(radius=1.0):
+    """
+    Create a 'bevel object' for a streamline curve. This is a native Blender
+    curve property that determines the extrusion profile.
+    """
+    bev_name = 'streamline_bevel_profile_radius-{}'.format(radius)
+    bev_obj = bpy.data.objects.get(bev_name, None)
+    if bev_obj is None:
+        bpy.ops.object.select_all(action='DESELECT')
+
+        bpy.ops.curve.primitive_bezier_circle_add(location=[0., 0., 0.])
+
+        # Set its geometrical properties
+        num_verts = 16
+        bpy.context.object.data.resolution_u = num_verts / 4
+        bev_obj = bpy.context.scene.objects.active
+        bev_obj.scale[0] = radius
+        bev_obj.scale[1] = radius
+        bev_obj.scale[2] = radius
+
+        # Make it findable
+        bev_obj.name = bev_name
+        group = bpy.data.groups.get(GROUPNAME_HELPER_GEOMETRY, None)
+        if group is None:
+            group = bpy.data.groups.new(GROUPNAME_HELPER_GEOMETRY)
+        group.objects.link(bev_obj)
+
+    return bev_obj
+
+
+def set_streamline_appearance(curve_obj, material=None, solid=True,
+                              bevel_object=None, caps=True):
+    """
+    Set the appearance of any Blender curve.
+    """
+    line_data = curve_obj.data
+
+    # The line is drawn in 3D
+    line_data.dimensions = '3D'
+    line_data.fill_mode = 'FULL'
+
+    # Setup the spatial data of a SOLID line
+    if solid:
+        # Leave default, scaled by radius associated with each point
+        line_data.bevel_depth = 1.0
+
+        # Adjust the texture coordinates of the poly-line.
+        # line_data.use_auto_texspace = False
+        # line_data.texspace_size[0] = 5
+        # line_data.texspace_size[1] = 5
+        # line_data.texspace_size[2] = 5
+
+        # If a bevel object is given, use it for scaling the diameter of the poly-line
+        if bevel_object is not None:
+            line_data.bevel_object = bevel_object
+            line_data.use_fill_caps = caps
+
+    # Setup appearance
+    if material is not None:
+        line_data.materials.append(material)
 
 
 ################################################################################
@@ -96,7 +200,7 @@ class StreamlinesPanel(bpy.types.Panel):
     # Properties for UI state
 
     # Streamlines file
-    debug_tck_file = '/home/luye/Documents/mri_data/Waxholm_rat_brain_atlas/WHS_DTI/S56280_1e4tracks.tck'
+    debug_tck_file = '/home/luye/Documents/mri_data/Waxholm_rat_brain_atlas/WHS_DTI_v1_ALS/S56280_track_filter-ROI-STN.tck'
     default_tck_file = debug_tck_file if DEBUG else 'Select File'
     bpy.types.Scene.StreamlinesFile = StringProperty(
         name="Streamlines File",
@@ -113,15 +217,15 @@ class StreamlinesPanel(bpy.types.Panel):
         description="Select file name for axon groups.",
         default="axon_groups")
 
-    bpy.types.Scene.ProjectionPrePopLabel = StringProperty(
-        name="Pre-synaptic Label",
-        description="Label for pre-synaptic population of projection.",
-        default="PRE")
+    # bpy.types.Scene.ProjectionPrePopLabel = StringProperty(
+    #     name="Pre-synaptic Label",
+    #     description="Label for pre-synaptic population of projection.",
+    #     default="PRE")
 
-    bpy.types.Scene.ProjectioPostPopLabel = StringProperty(
-        name="Post-synaptic label",
-        description="Label for post-synaptic population of projection.",
-        default="POST")
+    # bpy.types.Scene.ProjectionPostPopLabel = StringProperty(
+    #     name="Post-synaptic label",
+    #     description="Label for post-synaptic population of projection.",
+    #     default="POST")
 
     bpy.types.Scene.MaxLoadStreamlines = IntProperty(
         name="Max Streamlines",
@@ -137,6 +241,11 @@ class StreamlinesPanel(bpy.types.Panel):
         name="Scale",
         description="Streamline scale relative to microns (units/um)",
         default=1e3, min=1e-12, max=1e12)
+
+    bpy.types.Scene.RoiName = StringProperty(
+        name="ROI Name",
+        description="Name for selected ROI volume",
+        default='ROI-1')
 
 
     # --------------------------------------------------------------------------
@@ -167,15 +276,14 @@ class StreamlinesPanel(bpy.types.Panel):
         # Import Options -------------------------------------------------------
 
         # labels for PRE and POST synaptic populations
-        row_pops_header = layout.row()
-        row_pops_header.column(align=True).label(text='Pre-syn.')
-        row_pops_header.column(align=True).label(text='Post-syn.')
-
-        row_pops_fields = layout.row()
-        row_pops_fields.column(align=True).prop(
-            context.scene, 'ProjectionPrePopLabel', text='')
-        row_pops_fields.column(align=True).prop(
-            context.scene, 'ProjectioPostPopLabel', text='')
+        # row_pops_header = layout.row()
+        # row_pops_header.column(align=True).label(text='Pre-syn.')
+        # row_pops_header.column(align=True).label(text='Post-syn.')
+        # row_pops_fields = layout.row()
+        # row_pops_fields.column(align=True).prop(
+        #     context.scene, 'ProjectionPrePopLabel', text='')
+        # row_pops_fields.column(align=True).prop(
+        #     context.scene, 'ProjectionPostPopLabel', text='')
 
         row_max_load = layout.row()
         row_max_load.prop(context.scene, 'MaxLoadStreamlines')
@@ -188,8 +296,22 @@ class StreamlinesPanel(bpy.types.Panel):
 
         # Draw Streamlines
         col_sketch = layout.column(align=True)
-        col_sketch.operator('sketch.streamlines',
-                                icon='MOD_PARTICLES')
+        col_sketch.operator('import.streamlines', icon='IPO')
+
+        # ROIs -----------------------------------------------------------------
+        row_export = layout.row()
+        row_export.label(text='ROIs:', icon='ALIASED')
+
+        # ROI name
+        layout.row().prop(context.scene, 'RoiName')
+
+        # Button to import ROI
+        layout.column(align=True).operator('add.roi', icon='IMPORT')
+        
+        # Button to center view
+        layout.column(align=True).operator('view3d.view_selected', icon='RESTRICT_VIEW_OFF')
+
+        # Exporting ------------------------------------------------------------
 
         # Saving morphology options
         row_export = layout.row()
@@ -211,15 +333,17 @@ class ImportStreamlines(bpy.types.Operator):
     """
 
     # Operator parameters
-    bl_idname = "sketch.streamlines"
-    bl_label = "Sketch Streamlines"
+    bl_idname = "import.streamlines"
+    bl_label = "Import Streamlines"
 
 
     def execute(self, context):
-        """Execute the operator.
+        """
+        Execute the operator.
 
         :param context:
             Rendering context
+
         :return:
             'FINISHED'
         """
@@ -234,18 +358,75 @@ class ImportStreamlines(bpy.types.Operator):
 
         # convert to Blender polyline curves
         fname_base, ext = os.path.splitext(os.path.split(context.scene.StreamlinesFile)[1])
-        group_name = "{}-to-{}_tck-{}".format(context.scene.ProjectionPrePopLabel,
-                        context.scene.ProjectionPostPopLabel, fname_base)
-        tck_group = bpy.data.groups.get(group_name, bpy.data.groups.new(group_name))
+
+        # Create group
+        group_name = "Streamlines-{}".format(fname_base)
+        tck_group = bpy.data.groups.get(group_name, None)
+        if tck_group is None:
+            tck_group = bpy.data.groups.new(group_name)
+
+        # Material for streamlines
+        tck_mat = get_streamline_material()
+        tck_scale = context.scene.StreamlineUnitScale
+        bev_obj = get_streamline_bevel_profile(radius=tck_scale*1e-3)
+
+        # Create curves
         for tck_coords in streamlines:
             tck_name = 'tck_' + fname_base # copies are numbered by Blender
-            coords_micron = tck_coords * context.scene.StreamlineUnitScale
+
+            # Scale units
+            coords_micron = tck_coords * tck_scale
+
+            # Draw using our simple function
             crv_obj = nmv.geometry.draw_polyline_curve(tck_name, coords_micron,
                                                         curve_type='POLY')
+            # context.scene.objects.active = crv_obj
+            # bpy.ops.object.material_slot_add()
+            set_streamline_appearance(crv_obj, material=tck_mat, solid=True, 
+                caps=True, bevel_object=bev_obj)
+
+            # Alternative: line_ops.draw_poly_line
+            # crv_obj = nmv.geometry.ops.draw_poly_line(
+            #     poly_line_data=coords_micron,
+            #     poly_line_radii=np.ones((len(coords_micron), 1)),
+            #     name=tck_name, material=tck_mat,
+            #     bevel_object=bev_obj)
+
             tck_group.objects.link(crv_obj)
 
         # Save references to objects
         _tck_groups[tck_group.name] = tck_group
+        return {'FINISHED'}
+
+
+class AddROI(bpy.types.Operator):
+    """
+    Add ROI for positioning cells and streamlines.
+    """
+
+    # Operator parameters
+    bl_idname = "add.roi"
+    bl_label = "Add to ROIs"
+
+
+    def execute(self, context):
+        """
+        Execute the operator.
+
+        :param context:
+            Rendering context
+
+        :return:
+            'FINISHED'
+        """
+        sel_obj = context.scene.objects.active
+        sel_obj.name = context.scene.RoiName
+
+        group = bpy.data.groups.get(GROUPNAME_ROI_VOLUMES, None)
+        if group is None:
+            group = bpy.data.groups.new(GROUPNAME_ROI_VOLUMES)
+        group.objects.link(sel_obj)
+
         return {'FINISHED'}
 
 
@@ -339,6 +520,7 @@ class SetAxonPostCell(bpy.types.Operator):
             'FINISHED'
         """
         # Get blender objects representing neuron and axon
+        selected = list(context.selected_objects)
         axon_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
         if axon_obj is None:
             self.report({'ERROR'}, 'Please select at least one axon curve.')
@@ -365,7 +547,7 @@ class SetAxonPostCell(bpy.types.Operator):
 
 # Classes to register with Blender
 _reg_classes = [
-    StreamlinesPanel, ImportStreamlines, ExportStreamlines
+    StreamlinesPanel, ImportStreamlines, ExportStreamlines, AddROI
 ]
 
 
