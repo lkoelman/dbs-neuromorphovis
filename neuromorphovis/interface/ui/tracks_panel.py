@@ -30,17 +30,53 @@ import neuromorphovis.interface as nmvif
 
 # Constants
 DEBUG = True
-STREAMLINE_MATERIAL_NAME = 'streamline_mat_1'
+STREAMLINE_MATERIAL_PREFIX = 'streamline_mat_'
 GROUPNAME_HELPER_GEOMETRY = 'Helper Geometry'
 GROUPNAME_ROI_VOLUMES = 'ROI Volumes'
 
 # Groups of imported streamlines
 _tck_groups = {}
 
+# Materials
+_STREAMLINE_MATERIAL_DEFS = {
+    'DEFAULT': {
+        'diffuse_color': [1.0, 0.707, 0.014], # yellow
+        'diffuse_shader': 'LAMBERT',
+        'diffuse_intensity': 0.8,
+        'alpha': 1.0,
+        'ambient': 1.0,
+        'emit': 0.0,
+    },
+    # Unassigned properties are taken from DEFAULT
+    'INCLUDE_EXPORT': {
+        'diffuse_color': [0.707, 0.108, 0.652],
+        'emit': 0.6,
+    }
+}
+
+# Custom Blender properties used by this module
+_PROP_AX_EXPORT = nmvif.mkprop('include_export')
+_PROP_OBJECT_TYPE = nmv.interface.ui.ui_data._PROP_OBJECT_TYPE
 
 ################################################################################
 # Support functions
 ################################################################################
+
+def get_streamlines(bpy_objects=None, selector=None):
+    """
+    Get all streamlines in the object collection
+
+    :param  bpy_objects:
+        bpy_collection, e.g. context.scene.objects or bpy.data.objects
+    """
+    if bpy_objects is None:
+        bpy_objects = bpy.data.objects
+    if selector is None:
+        selector = lambda crv: True
+    return [o for o in bpy_objects if (
+                (o.get(_PROP_OBJECT_TYPE, None) == 'streamline')
+                and (selector(o)))]
+
 
 def load_streamlines(file_path, max_num=1e12, min_length=0.0):
     """
@@ -71,49 +107,36 @@ def load_streamlines(file_path, max_num=1e12, min_length=0.0):
     return streamlines_filtered
 
 
-def track_group_coordinates(group_obj):
+def streamline_coordinates(curve_object):
     """
-    Convert Blender group of curves to list of coordinate lists.
+    Get vertex coordinates of Blender curve representing a streamline.
     """
-    curves_pts = []
-    for curve_obj in group_obj.objects:
-        if curve_obj.type != 'CURVE':
-            continue
-        crv_geom = curve_obj.data.splines[0]
-        num_pts = len(crv_geom.points)
-        curves_pts.append([crv_geom.points[i].co[0:3] for i in range(num_pts)])
-    return curves_pts
+    if curve_object.type != 'CURVE':
+        raise ValueError(curve_object.type)
+    crv_geom = curve_object.data.splines[0]
+    num_pts = len(crv_geom.points)
+    return [crv_geom.points[i].co[0:3] for i in range(num_pts)]
 
 
-def get_streamline_material():
+def get_streamline_material(state='DEFAULT'):
     """
     Get skeleton materials, while only creating them once.
     """
-    mat = bpy.data.materials.get(STREAMLINE_MATERIAL_NAME, None)
+    mat_name = STREAMLINE_MATERIAL_PREFIX + state
+    mat = bpy.data.materials.get(mat_name, None)
     if mat is None:
         current_scene = bpy.context.scene
         if not current_scene.render.engine == 'BLENDER_RENDER':
             current_scene.render.engine = 'BLENDER_RENDER'
 
         # Create a new material
-        mat = bpy.data.materials.new(STREAMLINE_MATERIAL_NAME)
+        mat = bpy.data.materials.new(mat_name)
 
-        # Set the diffuse parameters
-        mat.diffuse_color = [1.0, 0.707, 0.014] # yellow
-        mat.diffuse_shader = 'LAMBERT'
-        mat.diffuse_intensity = 0.8
+        # Set material properties
+        for prop_name, default_val in _STREAMLINE_MATERIAL_DEFS['DEFAULT'].items():
+            value = _STREAMLINE_MATERIAL_DEFS[state].get(prop_name, default_val)
+            setattr(mat, prop_name, value)
 
-        # Set the specular parameters (leave default)
-        # mat.specular_color = [1.0, 1.0, 1.0]
-        # mat.specular_shader = 'WARDISO'
-        # mat.specular_intensity = 0.5
-
-        # 'Transparency' menu parameters
-        mat.alpha = 1.0
-
-        # 'Shading' menu parameters
-        mat.ambient = 1.0
-        mat.emit = 0.0 # positive for 'glowing' effect
     return mat
 
 
@@ -176,6 +199,7 @@ def set_streamline_appearance(curve_obj, material=None, solid=True,
 
     # Setup appearance
     if material is not None:
+        # line_data.materials.clear()
         line_data.materials.append(material)
 
 
@@ -202,30 +226,12 @@ class StreamlinesPanel(bpy.types.Panel):
     # Streamlines file
     debug_tck_file = '/home/luye/Documents/mri_data/Waxholm_rat_brain_atlas/WHS_DTI_v1_ALS/S56280_track_filter-ROI-STN.tck'
     default_tck_file = debug_tck_file if DEBUG else 'Select File'
+
     bpy.types.Scene.StreamlinesFile = StringProperty(
         name="Streamlines File",
         description="Select streamlines file",
         default=default_tck_file, maxlen=2048,  subtype='FILE_PATH')
 
-    bpy.types.Scene.StreamlinesOutputDirectory = StringProperty(
-        name="Output Directory",
-        description="Select a directory where the results will be generated",
-        default="Select Directory", maxlen=5000, subtype='DIR_PATH')
-
-    bpy.types.Scene.StreamlinesOutputFileName = StringProperty(
-        name="Output Filename",
-        description="Select file name for axon groups.",
-        default="axon_groups")
-
-    # bpy.types.Scene.ProjectionPrePopLabel = StringProperty(
-    #     name="Pre-synaptic Label",
-    #     description="Label for pre-synaptic population of projection.",
-    #     default="PRE")
-
-    # bpy.types.Scene.ProjectionPostPopLabel = StringProperty(
-    #     name="Post-synaptic label",
-    #     description="Label for post-synaptic population of projection.",
-    #     default="POST")
 
     bpy.types.Scene.MaxLoadStreamlines = IntProperty(
         name="Max Streamlines",
@@ -262,16 +268,10 @@ class StreamlinesPanel(bpy.types.Panel):
         scene = context.scene
 
         # File Paths -----------------------------------------------------------
-        row_import_header = layout.row()
-        row_import_header.label(text='Import streamlines:',
-                                icon='LIBRARY_DATA_DIRECT')
-        # Select directory
-        row_dir = layout.row()
-        row_dir.prop(scene, 'StreamlinesFile')
+        layout.row().label(text='Import streamlines:', icon='LIBRARY_DATA_DIRECT')
 
-        # Output directory
-        output_directory_row = layout.row()
-        output_directory_row.prop(scene, 'StreamlinesOutputDirectory')
+        # Select directory
+        layout.row().prop(scene, 'StreamlinesFile')
 
         # Import Options -------------------------------------------------------
 
@@ -285,22 +285,17 @@ class StreamlinesPanel(bpy.types.Panel):
         # row_pops_fields.column(align=True).prop(
         #     context.scene, 'ProjectionPostPopLabel', text='')
 
-        row_max_load = layout.row()
-        row_max_load.prop(context.scene, 'MaxLoadStreamlines')
+        layout.row().prop(context.scene, 'MaxLoadStreamlines')
 
-        row_min_length = layout.row()
-        row_min_length.prop(context.scene, 'MinStreamlineLength')
+        layout.row().prop(context.scene, 'MinStreamlineLength')
 
-        row_scale =layout.row()
-        row_scale.prop(context.scene, 'StreamlineUnitScale')
+        layout.row().prop(context.scene, 'StreamlineUnitScale')
 
         # Draw Streamlines
-        col_sketch = layout.column(align=True)
-        col_sketch.operator('import.streamlines', icon='IPO')
+        layout.column(align=True).operator('import.streamlines', icon='IPO')
 
         # ROIs -----------------------------------------------------------------
-        row_export = layout.row()
-        row_export.label(text='ROIs:', icon='ALIASED')
+        layout.row().label(text='ROIs:', icon='ALIASED')
 
         # ROI name
         layout.row().prop(context.scene, 'RoiName')
@@ -313,12 +308,10 @@ class StreamlinesPanel(bpy.types.Panel):
 
         # Exporting ------------------------------------------------------------
 
-        # Saving morphology options
-        row_export = layout.row()
-        row_export.label(text='Export Streamlines:', icon='LIBRARY_DATA_DIRECT')
+        layout.row().label(text='Export Streamlines:', icon='LIBRARY_DATA_DIRECT')
 
-        col_export = layout.column(align=True)
-        col_export.operator('export.streamlines', icon='SAVE_COPY')
+        layout.column(align=True).operator('axon.toggle_export', icon='EXPORT')
+        layout.column(align=True).operator('export.streamlines', icon='SAVE_COPY')
 
 ################################################################################
 # Operators
@@ -360,13 +353,13 @@ class ImportStreamlines(bpy.types.Operator):
         fname_base, ext = os.path.splitext(os.path.split(context.scene.StreamlinesFile)[1])
 
         # Create group
-        group_name = "Streamlines-{}".format(fname_base)
+        group_name = "Axons ({})".format(fname_base)
         tck_group = bpy.data.groups.get(group_name, None)
         if tck_group is None:
             tck_group = bpy.data.groups.new(group_name)
 
         # Material for streamlines
-        tck_mat = get_streamline_material()
+        tck_mat = get_streamline_material(state='DEFAULT')
         tck_scale = context.scene.StreamlineUnitScale
         bev_obj = get_streamline_bevel_profile(radius=tck_scale*1e-3)
 
@@ -392,7 +385,10 @@ class ImportStreamlines(bpy.types.Operator):
             #     name=tck_name, material=tck_mat,
             #     bevel_object=bev_obj)
 
+            # Organize object so we can recognize it
             tck_group.objects.link(crv_obj)
+            prop_name = nmvif.mkprop('object_type')
+            crv_obj[prop_name] = 'streamline'
 
         # Save references to objects
         _tck_groups[tck_group.name] = tck_group
@@ -406,7 +402,7 @@ class AddROI(bpy.types.Operator):
 
     # Operator parameters
     bl_idname = "add.roi"
-    bl_label = "Add to ROIs"
+    bl_label = "Add as ROI"
 
 
     def execute(self, context):
@@ -426,6 +422,44 @@ class AddROI(bpy.types.Operator):
         if group is None:
             group = bpy.data.groups.new(GROUPNAME_ROI_VOLUMES)
         group.objects.link(sel_obj)
+
+        return {'FINISHED'}
+
+
+class ToggleAxonExport(bpy.types.Operator):
+    """
+    Tag or untag selected axon for export.
+    """
+    bl_idname = "axon.toggle_export"
+    bl_label = "(Un)mark for export"
+
+    def execute(self, context):
+        """
+        Execute the operator.
+
+        :param context:
+            Rendering context
+        :return:
+            'FINISHED'
+        """
+        # Get blender objects representing neuron and axon
+        crv_objs = [obj for obj in context.selected_objects if obj.type == 'CURVE']
+        if len(crv_objs) == 0:
+            self.report({'ERROR'}, 'Please select at least one axon curve.')
+            return {'FINISHED'}
+
+        # Toggle the export flag for each axon
+        mat_exclude = nmvif.ui.tracks_panel.get_streamline_material(state='DEFAULT')
+        mat_include = nmvif.ui.tracks_panel.get_streamline_material(state='INCLUDE_EXPORT')
+        for curve in crv_objs:
+            should_export = curve.get(_PROP_AX_EXPORT, False)
+            curve[_PROP_AX_EXPORT] = not should_export # toggle it
+
+            # Adjust material property to reflect inclusion
+            material = mat_exclude if should_export else mat_include # we flipped it!
+            curve.data.materials.clear()
+            curve.data.materials.append(material)
+
 
         return {'FINISHED'}
 
@@ -453,90 +487,23 @@ class ExportStreamlines(bpy.types.Operator):
             'FINISHED'
         """
         # Just export raw streamlines, metadata should be in config file
-        tck_data = {
-            name: track_group_coordinates(grp) for name, grp in _tck_groups.items()
+        streamlines = get_streamlines(selector=lambda crv: crv.get(_PROP_AX_EXPORT, False))
+        tck_dict = {
+            crv.name: streamline_coordinates(crv) for crv in streamlines
         }
 
+        # Subdirectories for outputs are defined on io_panel.py
+        out_basedir = context.scene.OutputDirectory
+        out_fulldir = os.path.join(out_basedir, 'axons')
+        if not nmv.file.ops.path_exists(out_fulldir):
+            nmv.file.ops.clean_and_create_directory(out_fulldir)
+
         # save as pickle to selected path
-        out_dir = context.scene.StreamlinesOutputDirectory
-        out_fname = context.scene.StreamlinesOutputFileName
-        out_fpath = os.path.join(out_dir, out_fname + '.pkl')
+        out_fpath = os.path.join(out_fulldir, 'axon_coordinates.pkl')
         with open(out_fpath, "wb") as f:
-            pickle.dump(tck_data, f)
-        return {'FINISHED'}
+            pickle.dump(tck_dict, f)
 
-
-class SetAxonPreCell(bpy.types.Operator):
-    """
-    Operator SetAxonPreCell
-    """
-    bl_idname = "set_axon.pre"
-    bl_label = "Set pre-synaptic cell for axon"
-
-    def execute(self, context):
-        """
-        Execute the operator.
-
-        :param context:
-            Rendering context
-        :return:
-            'FINISHED'
-        """
-        # Get blender objects representing neuron and axon
-        selected = list(context.selected_objects)
-        cell_obj = next((obj for obj in selected if 'neuron_morphology_name' in obj.keys()), None)
-        if cell_obj is None:
-            self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
-            return {'FINISHED'}
-        axon_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
-        if axon_obj is None:
-            self.report({'ERROR'}, 'Please select at least one axon curve.')
-            return {'FINISHED'}
-
-        # Get the morphology object
-        cell_morph = nmvif.dbs_panel.get_morphology_from_object(cell_obj)
-
-        # Set pre-synaptic cell GID
-        axon_obj['presynaptic_cell_GID'] = cell_morph.gid
-        axon_obj['presynaptic_cell_name'] = cell_morph.label
-
-        return {'FINISHED'}
-
-
-class SetAxonPostCell(bpy.types.Operator):
-    """
-    Operator SetAxonPostCell
-    """
-    bl_idname = "set_axon.post"
-    bl_label = "Set post-synaptic cell for axon"
-
-    def execute(self, context):
-        """
-        Execute the operator.
-
-        :param context:
-            Rendering context
-        :return:
-            'FINISHED'
-        """
-        # Get blender objects representing neuron and axon
-        selected = list(context.selected_objects)
-        axon_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
-        if axon_obj is None:
-            self.report({'ERROR'}, 'Please select at least one axon curve.')
-            return {'FINISHED'}
-
-        # Get cell GID of all selected object that represent neuron geometry
-        post_cell_gids = set((obj['neuron_morphology_gid'] for obj in selected
-                                if 'neuron_morphology_gid' in obj.keys()))
-        if len(post_cell_gids) == 0:
-            self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
-            return {'FINISHED'}
-
-        # Set pre-synaptic cell GID
-        old_post_gids = set(axon_obj.get('postsynaptic_cell_GIDs', []))
-        axon_obj['postsynaptic_cell_GIDs'] = sorted(old_post_gids.union(post_cell_gids))
-
+        self.report({'INFO'}, 'Wrote axons to file {}'.format(out_fpath))
         return {'FINISHED'}
 
 
@@ -547,7 +514,8 @@ class SetAxonPostCell(bpy.types.Operator):
 
 # Classes to register with Blender
 _reg_classes = [
-    StreamlinesPanel, ImportStreamlines, ExportStreamlines, AddROI
+    StreamlinesPanel, ImportStreamlines, ExportStreamlines, AddROI,
+    ToggleAxonExport
 ]
 
 

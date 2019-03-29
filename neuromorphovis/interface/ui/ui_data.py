@@ -32,6 +32,7 @@ ui_options = nmv.options.NeuroMorphoVisOptions()
 
 # The morphology skeleton object loaded after UI interaction.
 ui_morphology = None
+ui_morphologies = [] # all loaded morphologies
 
 # The reconstructed soma mesh object
 ui_soma_mesh = None
@@ -43,3 +44,15 @@ ui_reconstructed_skeleton = list()
 # NOTE: If this list contains a single mesh object, then it accounts for the entire mesh after
 # joining all the mesh objects together
 ui_reconstructed_mesh = list()
+
+# Prefix for all custom properties on Blender objects
+CUSTOM_PROPERTY_PREFIX = 'NMV_'
+def mkprop(property_name):
+    """
+    Make custom property name that is easily identifiable
+    as a reserved NeuroMorphoVis property.
+    """
+    return CUSTOM_PROPERTY_PREFIX + property_name
+
+# Custom Blender properties used by this module
+_PROP_OBJECT_TYPE = mkprop('object_type')

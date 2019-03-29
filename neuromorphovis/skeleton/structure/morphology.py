@@ -102,7 +102,7 @@ class Morphology:
         # Morphology label (will be morphology name or gid)
         self.label = label
         if gid is not None:
-            self.label = str(gid)
+            self.label += '.GID-{}'.format(gid)
 
         # Morphology full bounding box
         self.bounding_box = None

@@ -122,7 +122,7 @@ class DbsPositioningPanel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        # Importing ------------------------------------------------------------
+        # Import / Export ------------------------------------------------------
         row_import_header = layout.row()
         row_import_header.label(text='Import morphologies:',
                                 icon='LIBRARY_DATA_DIRECT')
@@ -132,8 +132,11 @@ class DbsPositioningPanel(bpy.types.Panel):
 
         # Morphology sketching button
         if not in_edit_mode:
-            col_sketch = layout.column(align=True)
-            col_sketch.operator('sketch.skeleton_dbs', icon='PARTICLE_POINT')
+            layout.column(align=True).operator(
+                'import.neuron_morphology', icon='PARTICLE_POINT')
+ 
+            layout.column(align=True).operator(
+                'export.morphologies', icon='GROUP_VERTEX')
 
         # Duplication ----------------------------------------------------------
         row_dup_header = layout.row()
@@ -176,23 +179,13 @@ class DbsPositioningPanel(bpy.types.Panel):
         global is_skeleton_edited
         if not is_skeleton_edited:
             col_edit_morph = layout.column(align=True)
-            col_edit_morph.operator('edit.morphology_coordinates_dbs',
+            col_edit_morph.operator('edit.morphology_points',
                                     icon='MESH_DATA')
         else:
             col_update_morph = layout.column(align=True)
-            col_update_morph.operator('update.morphology_coordinates_dbs',
+            col_update_morph.operator('update.morphology_points',
                                       icon='MESH_DATA')
 
-        # Saving morphology ----------------------------------------------------
-        if not in_edit_mode:
-
-            # Saving morphology options
-            row_save_morph = layout.row()
-            row_save_morph.label(text='Save Morphology As:', icon='MESH_UVSPHERE')
-
-            col_save_morph = layout.column(align=True)
-            col_save_morph.operator('export_morphology_dbs.swc',
-                                    icon='GROUP_VERTEX')
 
 ################################################################################
 # Support functions
@@ -302,15 +295,15 @@ def get_morphology_from_object(blender_object):
 # Operators
 ################################################################################
 
-class DbsSketchSkeleton(bpy.types.Operator):
+class ImportMorphology(bpy.types.Operator):
     """
     Repair the morphology skeleton (as volumetric mesh),
     detect the artifacts and fix them.
     """
 
     # Operator parameters
-    bl_idname = "sketch.skeleton_dbs"
-    bl_label = "Sketch Skeleton"
+    bl_idname = "import.neuron_morphology"
+    bl_label = "Import Morphology"
 
 
     def execute(self, context):
@@ -344,13 +337,13 @@ class DbsSketchSkeleton(bpy.types.Operator):
 
 
 
-class DbsEditMorphologyCoordinates(bpy.types.Operator):
+class EditMorpohologyPoints(bpy.types.Operator):
     """
     Update the morphology coordinates following to the repair process
     """
 
     # Operator parameters
-    bl_idname = "edit.morphology_coordinates_dbs"
+    bl_idname = "edit.morphology_points"
     bl_label = "Edit Coordinates"
 
     # FIXME: update operator EditMorphologyCoordinates to work with ui_morphologies
@@ -393,13 +386,13 @@ class DbsEditMorphologyCoordinates(bpy.types.Operator):
 
 
 
-class DbsUpdateMorphologyCoordinates(bpy.types.Operator):
+class UpdateMorphologyPointsFromSkeleton(bpy.types.Operator):
     """
     Update the morphology coordinates following to the repair process.
     """
 
     # Operator parameters
-    bl_idname = "update.morphology_coordinates_dbs"
+    bl_idname = "update.morphology_points"
     bl_label = "Update Coordinates"
 
 
@@ -705,14 +698,14 @@ class SetDuplicationBoundary(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class DbsExportMorphologySWC(bpy.types.Operator):
+class ExportMorphologies(bpy.types.Operator):
     """
     Export the reconstructed morphology in an SWC file
     """
 
     # Operator parameters
-    bl_idname = "export_morphology_dbs.swc"
-    bl_label = "SWC (.swc)"
+    bl_idname = "export.morphologies"
+    bl_label = "Export all to SWC"
 
     def execute(self, context):
         """
@@ -731,10 +724,11 @@ class DbsExportMorphologySWC(bpy.types.Operator):
             self.report({'ERROR'}, nmv.consts.Messages.INVALID_OUTPUT_PATH)
             return {'FINISHED'}
 
-        # Create the meshes directory if it does not exist
-        if not nmv.file.ops.path_exists(nmvif.ui_options.io.morphologies_directory):
-            nmv.file.ops.clean_and_create_directory(
-                nmvif.ui_options.io.morphologies_directory)
+        # Subdirectories for outputs are defined on io_panel.py
+        out_basedir = context.scene.OutputDirectory
+        out_fulldir = os.path.join(out_basedir, context.scene.MorphologiesPath)
+        if not nmv.file.ops.path_exists(out_fulldir):
+            nmv.file.ops.clean_and_create_directory(out_fulldir)
 
         # Get morphologies to export
         selected_object = context.scene.objects.active
@@ -744,12 +738,13 @@ class DbsExportMorphologySWC(bpy.types.Operator):
             exported_morphologies = [selected_morphology]
         else:
             exported_morphologies = nmvif.ui_morphologies
+        self.report({'DEBUG'}, 'Found {} morphologies to export.'.format(
+            len(exported_morphologies)))
         
         # Export the selected morphologies
         for morphology in nmvif.ui_morphologies:
             # Apply soma geometry transform to all sample points
-            soma_obj = next((obj for obj in nmvif.ui_reconstructed_skeletons[morphology.label]
-                                if 'soma' in obj.name), None)
+            soma_obj = next((obj for obj in nmvif.ui_reconstructed_skeletons[morphology.label] if 'soma' in obj.name), None)
             if soma_obj is None:
                 self.report({'ERROR'}, 'Soma geometry not found for morphology {}'.format(
                                         morphology.label))
@@ -757,38 +752,39 @@ class DbsExportMorphologySWC(bpy.types.Operator):
             morphology.transform_sample_points(soma_obj.matrix_world)
 
             # Write to SWC file
-            nmv.file.write_morphology_to_swc_file(morphology,
-                                    nmvif.ui_options.io.morphologies_directory)
+            self.report({'DEBUG'}, 'Exporting morphology {}.'.format(morphology.label))
+            nmv.file.write_morphology_to_swc_file(morphology, out_fulldir)
+
+        self.report({'INFO'}, 'Morphologies exported to {}'.format(out_fulldir))
 
         return {'FINISHED'}
+
+
+
+################################################################################
+# GUI Registration
+################################################################################
+
+
+# Classes to register with Blender
+_reg_classes = [
+    DbsPositioningPanel, ImportMorphology, ExportMorphologies,
+    EditMorpohologyPoints, UpdateMorphologyPointsFromSkeleton,
+    DuplicateMorphology, SetDuplicationBoundary
+]
 
 
 def register_panel():
     """
     Registers all the classes in this panel.
     """
+    for cls in _reg_classes:
+        bpy.utils.register_class(cls)
 
-    # Register UI Elements
-    bpy.utils.register_class(DbsPositioningPanel)
-
-    # Register Operators
-    bpy.utils.register_class(DbsSketchSkeleton)
-    bpy.utils.register_class(DbsEditMorphologyCoordinates)
-    bpy.utils.register_class(DbsUpdateMorphologyCoordinates)
-    bpy.utils.register_class(DbsExportMorphologySWC)
-    bpy.utils.register_class(DuplicateMorphology)
-    bpy.utils.register_class(SetDuplicationBoundary)
 
 def unregister_panel():
-    """Un-registers all the classes in this panel.
     """
-    # Morphology analysis panel
-    bpy.utils.unregister_class(DbsPositioningPanel)
-
-    # Unregister Operators
-    bpy.utils.unregister_class(DbsSketchSkeleton)
-    bpy.utils.unregister_class(DbsEditMorphologyCoordinates)
-    bpy.utils.unregister_class(DbsUpdateMorphologyCoordinates)
-    bpy.utils.unregister_class(DbsExportMorphologySWC)
-    bpy.utils.unregister_class(DuplicateMorphology)
-    bpy.utils.unregister_class(SetDuplicationBoundary)
+    Un-registers all the classes in this panel.
+    """
+    for cls in _reg_classes:
+        bpy.utils.unregister_class(cls)
