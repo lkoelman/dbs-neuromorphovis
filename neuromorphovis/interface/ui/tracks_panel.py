@@ -12,7 +12,7 @@ import pickle
 
 # Blender imports
 import bpy
-from bpy.props import FloatProperty, IntProperty, StringProperty
+from bpy.props import FloatProperty, IntProperty, StringProperty, BoolProperty
 
 # External imports
 import numpy as np
@@ -73,26 +73,44 @@ def get_streamlines(bpy_objects=None, selector=None):
         bpy_objects = bpy.data.objects
     if selector is None:
         selector = lambda crv: True
+    elif selector == 'INCLUDE_EXPORT':
+        selector = lambda crv: crv.get(_PROP_AX_EXPORT, False)
     return [o for o in bpy_objects if (
                 (o.get(_PROP_OBJECT_TYPE, None) == 'streamline')
                 and (selector(o)))]
 
 
-def load_streamlines(file_path, max_num=1e12, min_length=0.0):
+def load_streamlines(file_path, label=None, max_num=1e12, min_length=0.0,
+                     encoding='ASCII'):
     """
     Load streamlines from file
+
+    :param  encoding"
+        Use 'latin1' for pickle files containing numpy data.
     """
-    tck_file = nib.streamlines.load(file_path, lazy_load=True)
+    # Load streamline as iterable of coordinate lists/arrays
+    if file_path.endswith('.pkl'):
+        with open(file_path, 'rb') as file:
+            f_contents = pickle.load(file, encoding=encoding)
+        if label is not None:
+            streamlines = f_contents[label]
+        else:
+            streamlines = f_contents
+    else:
+        # Assume tractography file
+        tck_file = nib.streamlines.load(file_path, lazy_load=True)
 
-    # Make sure tracts are defined in RAS+ world coordinate system
-    tractogram = tck_file.tractogram.to_world(lazy=True)
+        # Make sure tracts are defined in RAS+ world coordinate system
+        tractogram = tck_file.tractogram.to_world(lazy=True)
 
-    # Manual transformation to RAS+ world coordinate system
-    # vox2ras = tck_file.tractogram.affine_to_rasmm
-    # tck_ras_coords = nib.affines.apply_affine(vox2ras, streamline)
+        # Manual transformation to RAS+ world coordinate system
+        # vox2ras = tck_file.tractogram.affine_to_rasmm
+        # tck_ras_coords = nib.affines.apply_affine(vox2ras, streamline)
+        streamlines = tractogram.streamlines
 
+    # Select streamlines from file
     streamlines_filtered = []
-    for i, streamline in enumerate(tractogram.streamlines): # lazy-loading generator
+    for i, streamline in enumerate(streamlines): # lazy-loading generator
         # streamline is (N x 3) matrix
         if len(streamlines_filtered) >= max_num:
             break
@@ -232,6 +250,17 @@ class StreamlinesPanel(bpy.types.Panel):
         description="Select streamlines file",
         default=default_tck_file, maxlen=2048,  subtype='FILE_PATH')
 
+    bpy.types.Scene.StreamlinesLabel = StringProperty(
+        name="Label",
+        description="Enter label for streamlines in file (supported by pickle files)",
+        default='')
+
+    # ISSUE when loading numpy data saved using Python 2.x -> encoding must be 'latin1'
+    bpy.types.Scene.StreamlinesEncoding = StringProperty(
+        name="Encoding",
+        description="Encoding of streamlines if using Python pickle file.",
+        default='latin1')
+
 
     bpy.types.Scene.MaxLoadStreamlines = IntProperty(
         name="Max Streamlines",
@@ -272,6 +301,8 @@ class StreamlinesPanel(bpy.types.Panel):
 
         # Select directory
         layout.row().prop(scene, 'StreamlinesFile')
+        layout.row().prop(scene, 'StreamlinesLabel')
+        layout.row().prop(scene, 'StreamlinesEncoding')
 
         # Import Options -------------------------------------------------------
 
@@ -343,8 +374,10 @@ class ImportStreamlines(bpy.types.Operator):
 
         # Load the streamlines as N x 3 arrays
         streamlines = load_streamlines(context.scene.StreamlinesFile,
+                        label=context.scene.StreamlinesLabel,
                         max_num=context.scene.MaxLoadStreamlines,
-                        min_length=context.scene.MinStreamlineLength)
+                        min_length=context.scene.MinStreamlineLength,
+                        encoding=context.scene.StreamlinesEncoding)
         if streamlines is None:
             self.report({'ERROR'}, 'Invalid streamlines file.')
             return {'FINISHED'}
@@ -365,7 +398,10 @@ class ImportStreamlines(bpy.types.Operator):
 
         # Create curves
         for tck_coords in streamlines:
-            tck_name = 'tck_' + fname_base # copies are numbered by Blender
+            tck_name = 'tck'
+            if context.scene.StreamlinesLabel != '':
+                tck_name += '_' + context.scene.StreamlinesLabel
+            tck_name +=  '_' + fname_base # copies are numbered by Blender
 
             # Scale units
             coords_micron = tck_coords * tck_scale
@@ -428,10 +464,17 @@ class AddROI(bpy.types.Operator):
 
 class ToggleAxonExport(bpy.types.Operator):
     """
-    Tag or untag selected axon for export.
+    Mark or unmark selected axon for export.
     """
     bl_idname = "axon.toggle_export"
     bl_label = "(Un)mark for export"
+
+    # Named arguments for operator
+    toggle = BoolProperty(default=True, name='Toggle export status',
+                description='Whether to toggle the export status or set it.')
+    
+    export = BoolProperty(default=True, name='Mark axon for export',
+                description='If toggle is False, set the export status.')
 
     def execute(self, context):
         """
@@ -453,10 +496,14 @@ class ToggleAxonExport(bpy.types.Operator):
         mat_include = nmvif.ui.tracks_panel.get_streamline_material(state='INCLUDE_EXPORT')
         for curve in crv_objs:
             should_export = curve.get(_PROP_AX_EXPORT, False)
-            curve[_PROP_AX_EXPORT] = not should_export # toggle it
+            if self.toggle:
+                should_export = not should_export
+            else:
+                should_export = self.export
+            curve[_PROP_AX_EXPORT] = should_export
 
             # Adjust material property to reflect inclusion
-            material = mat_exclude if should_export else mat_include # we flipped it!
+            material = mat_include if should_export else mat_exclude # we flipped it!
             curve.data.materials.clear()
             curve.data.materials.append(material)
 

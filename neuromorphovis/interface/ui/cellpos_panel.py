@@ -83,10 +83,22 @@ class DbsPositioningPanel(bpy.types.Panel):
 
     ## Properties: morphology import
     default_dir = "/home/luye/Downloads/morphologies" if DEBUG else "Select Directory"
-    bpy.types.Scene.MorphologiesDirectory = StringProperty(
-        name="Morphologies",
-        description="Select a directory to mesh all the morphologies in it",
-        default=default_dir, maxlen=2048, subtype='DIR_PATH')
+
+    # Already defined in IO panel
+    # bpy.types.Scene.MorphologyFile = StringProperty(
+    #     name="Morphology File",
+    #     description="Select a specific morphology to mesh",
+    #     default='Select File', maxlen=2048,  subtype='FILE_PATH')
+
+    # bpy.types.Scene.MorphologiesDirectory = StringProperty(
+    #     name="Morphologies",
+    #     description="Select a directory to mesh all the morphologies in it",
+    #     default=default_dir, maxlen=2048, subtype='DIR_PATH')
+
+    bpy.types.Scene.MorphologyFileImportAll = BoolProperty(
+        name="Import all in directory",
+        description="Import all morphologies in file directory.",
+        default=False)
 
     ## Properties: morphology sketching
     bpy.types.Scene.MorphologySketched = BoolProperty(default=False)
@@ -127,8 +139,8 @@ class DbsPositioningPanel(bpy.types.Panel):
         row_import_header.label(text='Import morphologies:',
                                 icon='LIBRARY_DATA_DIRECT')
         # Select directory
-        row_dir = layout.row()
-        row_dir.prop(scene, 'MorphologiesDirectory')
+        layout.row().prop(scene, 'MorphologyFile')
+        layout.row().prop(scene, 'MorphologyFileImportAll')
 
         # Morphology sketching button
         if not in_edit_mode:
@@ -191,61 +203,6 @@ class DbsPositioningPanel(bpy.types.Panel):
 # Support functions
 ################################################################################
 
-def load_morphologies(panel_object, context_scene):
-    """
-    Load multiple morphologies from directory.
-
-    NOTE: Customized version of nmv.interface.ui.common.load_morphologies(),
-    adjusted to load multiple morphologies at once.
-
-    :param panel_object:
-        An object of a UI panel.
-
-    :param context_scene:
-        Current scene in the rendering context.
-    """
-    # Globals from this module
-    # NOTE: use ui_options.morphology instead
-    # global current_morphology_label
-    # global current_morphology_path
-
-
-    # NOTE: the difference between
-    # - selected in widget: nmv.interface.ui_options.io.morphologies_input_directory 
-    # - actually loaded: nmv.interface.ui_options.morphology.morphologies_loaded_directory
-
-    # Get directory selected through widget
-    input_dir = nmvif.ui_options.io.morphologies_input_directory = context_scene.MorphologiesDirectory
-    loaded_dir = nmvif.ui_options.morphology.morphologies_loaded_directory 
-
-    # Ensure that a folder has been selected
-    if 'Select Directory' in input_dir:
-        return None
-
-    if (loaded_dir is not None) and (loaded_dir == input_dir):
-        # Morphologies are loaded : return if same as selected
-        return 'ALREADY_LOADED'
-
-    # Global variables for keeping track of loaded objects
-    nmvif.ui_morphologies = []
-
-    # Load each morphology in input directory
-    morphology_file_paths = [os.path.join(input_dir, p) for p in os.listdir(input_dir) if p.endswith('.swc')]
-    for morph_path in morphology_file_paths:
-        # Update the morphology label
-        # morph_labels.append(nmv.file.ops.get_file_name_from_path(morph_path))    
-
-        # Load the morphology from the file
-        # NOTE: also assigns filename as label to morphology_object
-        nmvif.ui_options.morphology.morphology_file_path = morph_path
-        loading_flag, morphology_object = nmv.file.readers.read_morphology_from_file(
-            options=nmvif.ui_options)
-
-        if loading_flag:
-            nmvif.ui_morphologies.append(morphology_object)
-
-    return 'NEW_MORPHOLOGY_LOADED'
-
 
 def sketch_morphology_skeleton_guide(morphology, options):
     """
@@ -307,7 +264,8 @@ class ImportMorphology(bpy.types.Operator):
 
 
     def execute(self, context):
-        """Execute the operator.
+        """
+        Execute the operator.
 
         :param context:
             Rendering context
@@ -315,17 +273,46 @@ class ImportMorphology(bpy.types.Operator):
             'FINISHED'
         """
 
-        # Clear the scene
-        # nmv.scene.ops.clear_scene()
-        # NOTE: sketch_morphology_skeleton_guide also clears the scene
+        # Globals from this module
+        # NOTE: use ui_options.morphology instead
+        # global current_morphology_label
+        # global current_morphology_path
 
-        # Load the morphology files
-        loading_result = load_morphologies(self, context.scene)
+        # NOTE: the difference between
+        # - selected in widget: nmv.interface.ui_options.io.morphologies_input_directory 
+        # - actually loaded: nmv.interface.ui_options.morphology.morphologies_loaded_directory
 
-        # If the result is None, report the issue
-        if loading_result is None:
-            self.report({'ERROR'}, 'Please select a morphology file')
-            return {'FINISHED'}
+        # Get directory selected through widget
+        input_files = []
+        if context.scene.MorphologyFileImportAll:
+            # Import all SWC files in directory
+            base_dir = os.path.dirname(context.scene.MorphologyFile)
+            input_files = [
+                os.path.join(base_dir, p) for p in os.listdir(base_dir) if 
+                    p.endswith('.swc')
+            ]
+        else:
+            # Import only the selected SWC file
+            input_files = [context.scene.MorphologyFile]
+
+
+        # Global variables for keeping track of loaded objects
+        nmvif.ui_morphologies = []
+
+        # Load each morphology in input directory
+        for morph_path in input_files:
+            # Update the morphology label
+            # morph_labels.append(nmv.file.ops.get_file_name_from_path(morph_path))    
+
+            # Load the morphology from the file
+            # NOTE: also assigns filename as label to morphology_object
+            nmvif.ui_options.morphology.morphology_file_path = morph_path
+            loading_flag, morphology_object = nmv.file.readers.read_morphology_from_file(
+                options=nmvif.ui_options)
+
+            if loading_flag:
+                nmvif.ui_morphologies.append(morphology_object)
+
 
         # Plot the morphology (whatever issues it contains)
         for morphology_object in nmvif.ui_morphologies:

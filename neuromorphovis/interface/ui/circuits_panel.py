@@ -52,6 +52,10 @@ class CircuitsPanel(bpy.types.Panel):
     # --------------------------------------------------------------------------
     # Properties for UI state
 
+    bpy.types.Scene.CircuitName = StringProperty(
+        name="Circuit Name",
+        description="Name for exported circuit",
+        default='unnamed-circuit')
 
     # --------------------------------------------------------------------------
     # Panel overriden methods
@@ -76,10 +80,10 @@ class CircuitsPanel(bpy.types.Panel):
         layout.column(align=True).operator('axon.set_post_cells', icon='PARTICLE_TIP')
 
         # Exporting ------------------------------------------------------------
-
-        # Saving morphology options
         layout.row().label(text='Export Circuit:', icon='LIBRARY_DATA_DIRECT')
-        layout.column(align=True).operator('export.circuit')
+
+        layout.row().prop(context.scene, 'CircuitName')
+        layout.column(align=True).operator('export.circuit', icon='FILE_SCRIPT')
 
 
 ################################################################################
@@ -128,6 +132,9 @@ class SetAxonPreCell(bpy.types.Operator):
         axon_obj[_PROP_AX_PRE_GID] = cell_morph.gid
         axon_obj[_PROP_AX_PRE_NAME] = cell_morph.label
 
+        # Also toggle the axon for export
+        bpy.ops.axon.toggle_export(export=True, toggle=False)
+
         return {'FINISHED'}
 
 
@@ -165,6 +172,9 @@ class SetAxonPostCell(bpy.types.Operator):
         old_post_gids = set(axon_obj.get('postsynaptic_cell_GIDs', []))
         axon_obj[_PROP_AX_POST_GIDS] = sorted(old_post_gids.union(post_cell_gids))
 
+        # Also toggle the axon for export
+        bpy.ops.axon.toggle_export(export=True, toggle=False)
+
         return {'FINISHED'}
 
 
@@ -199,8 +209,9 @@ class ExportCircuit(bpy.types.Operator):
             })
         
         # Find axons tagged for export
-        all_streamlines = nmvif.ui.tracks_panel.get_streamlines()
-        for curve_obj in all_streamlines:
+        streamlines = nmvif.ui.tracks_panel.get_streamlines(
+                            selector='INCLUDE_EXPORT')
+        for curve_obj in streamlines:
             circuit_config['connections'].append({
                 'axon_id': curve_obj.name,
                 'pre_gid': curve_obj.get(_PROP_AX_PRE_GID, None),
@@ -217,7 +228,10 @@ class ExportCircuit(bpy.types.Operator):
         # Write to JSON file
         out_fname = context.scene.CircuitName + '.json'
         out_fpath = os.path.join(out_fulldir, out_fname)
-        json.dump(circuit_config, out_fpath, indent=2)
+        with open(out_fpath, 'w') as f:
+            json.dump(circuit_config, f, indent=2)
+
+        return {'FINISHED'}
 
 ################################################################################
 # GUI Registration
