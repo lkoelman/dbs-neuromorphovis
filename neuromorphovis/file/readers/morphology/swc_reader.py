@@ -32,6 +32,9 @@ import neuromorphovis.skeleton
 class SWCReader:
     """
     Read an SWC file into a structured morphology skeleton.
+
+    NOTE: arbors are represented by their root section, of type
+          nmv.skeleton.structure.section.Section
     """
 
     def __init__(self,
@@ -290,6 +293,31 @@ class SWCReader:
         self.build_sections_from_paths()
 
 
+    def set_samples(self, swc_samples):
+        """
+        Set SWC samples from other source than file.
+
+        This is equivalent to calling read_samples() with an SWC file
+        containing the same samples.
+
+        @param  swc_samples : iterable(indexable)
+                List of samples, see SWC file specification.
+        """
+        if len(self.samples_list) == 0:
+            # Add a dummy sample to the list at index 0 to match the indices
+            self.samples_list.append([0, 0, 0.0, 0.0, 0.0, 0.0, 0])
+
+        # Add the sample to the list
+        for sample in swc_samples:
+            self.samples_list.append(sample)
+
+        # Construct the connected paths from the samples list
+        self.build_connected_paths_from_samples()
+
+        # Construct the individual sections from the paths
+        self.build_sections_from_paths()
+
+
     def get_nmv_sample_from_samples_list(self,
                                          sample_index):
         """
@@ -529,7 +557,8 @@ class SWCReader:
             The type of the arbor.
 
         :return:
-            A list of trees, each representing an arbor of the morphology skeleton.
+            A list of trees (represented by their root section), each 
+            representing an arbor of the morphology skeleton.
         """
 
         # Get the sections that are specific to the arbor
@@ -542,18 +571,16 @@ class SWCReader:
         return arbors
 
 
-    def read_file(self):
+    def build_skeleton_components(self):
         """
-        Reads an SWC morphology file and return a reference to a NeuroMorphoVis morphology
-        structure.
+        Build skeleton componets from samples read from SWC file.
+
+        @pre    samples must be read into self.samples_list (read_samples())
 
         :return:
-            Returns a reference to a NeuroMorphoVis morphology structure that contains the skeleton.
+            tuple (soma, basal, apical, axon) with skeleton components
+            constructed from the samples
         """
-
-        # Read all the samples from the morphology file an store them into a list
-        self.read_samples()
-
         # Build the basal dendrites
         basal_dendrites_arbors = self.build_arbors_from_samples(
             nmv.consts.Arbors.SWC_BASAL_DENDRITE_SAMPLE_TYPE)
@@ -614,13 +641,39 @@ class SWCReader:
             basal_dendrites_arbors=basal_dendrites_arbors,
             apical_dendrites_arbors=apical_dendrites_arbors)
 
+        return soma, basal_dendrites_arbors, apical_dendrite_arbor, axon_arbor
+
+
+    def build_morphology(self, label, gid):
+        """
+        Builds morphology after samples have been read.
+        """
+        # Build skeleton components
+        skeleton_components = self.build_skeleton_components()
+        soma, basal_dendrites_arbors, apical_dendrite_arbor, axon_arbor = skeleton_components
+
         # Update the morphology label
         label = neuromorphovis.file.ops.get_file_name_from_path(self.morphology_file)
 
         # Construct the morphology skeleton
         nmv_morphology = neuromorphovis.skeleton.Morphology(
             soma=soma, axon=axon_arbor, dendrites=basal_dendrites_arbors,
-            apical_dendrite=apical_dendrite_arbor, label=label)
+            apical_dendrite=apical_dendrite_arbor, label=label, gid=gid)
 
         # Return a reference to the reconstructed morphology skeleton
         return nmv_morphology
+
+
+    def read_file(self):
+        """
+        Reads an SWC morphology file and return a reference to a NeuroMorphoVis morphology
+        structure.
+
+        :return:
+            Returns a reference to a NeuroMorphoVis morphology structure that contains the skeleton.
+        """
+
+        # Read all the samples from the morphology file an store them into a list
+        self.read_samples()
+
+        return self.build_morphology()

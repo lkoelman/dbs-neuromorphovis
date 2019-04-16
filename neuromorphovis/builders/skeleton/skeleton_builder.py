@@ -16,7 +16,7 @@
 ####################################################################################################
 
 # System imports
-import random, copy
+import copy
 
 # Blender imports
 import bpy
@@ -1122,8 +1122,7 @@ class SkeletonBuilder:
         # lose the rounded structure of the arbors
         morphology_objects.append(bevel_object)
 
-        # NOTE: Before drawing the skeleton, create the materials once and for all to improve the
-        # performance since this is way better than creating a new material per section or segment
+        # NOTE: Before drawing the skeleton, create the materials once and for all to improve the performance since this is way better than creating a new material per section or segment
         self.create_skeleton_materials()
 
         method = self.options.morphology.reconstruction_method
@@ -1238,11 +1237,6 @@ class SkeletonBuilder:
             for obj in morphology_objects:
                 if obj.name not in group.objects:
                     group.objects.link(obj)
-
-        # Save morphology name and gid on each geometry
-        for obj in morphology_objects:
-            obj['neuron_morphology_name'] = self.morphology.label
-            obj['neuron_morphology_gid'] = self.morphology.gid
 
         # Return the list of the drawn morphology objects
         return morphology_objects

@@ -23,6 +23,7 @@ import nibabel as nib
 import neuromorphovis as nmv
 import neuromorphovis.scene
 import neuromorphovis.interface as nmvif
+from neuromorphovis.interface.ui.ui_data import NMV_PROP, NMV_OBJ_TYPE
 
 
 ################################################################################
@@ -56,8 +57,8 @@ _STREAMLINE_MATERIAL_DEFS = {
 }
 
 # Custom Blender properties used by this module
-_PROP_AX_EXPORT = nmvif.mkprop('include_export')
-_PROP_OBJECT_TYPE = nmv.interface.ui.ui_data._PROP_OBJECT_TYPE
+_PROP_AX_EXPORT = NMV_PROP.INCLUDE_EXPORT
+_PROP_OBJECT_TYPE = NMV_PROP.OBJECT_TYPE
 
 ################################################################################
 # Support functions

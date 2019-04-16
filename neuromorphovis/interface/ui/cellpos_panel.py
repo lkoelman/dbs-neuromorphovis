@@ -34,9 +34,11 @@ import numpy as np
 import neuromorphovis as nmv
 import neuromorphovis.edit
 import neuromorphovis.interface as nmvif
+import neuromorphovis.interface.ui.circuit_data as circuit_data
 import neuromorphovis.scene
 import neuromorphovis.consts
 import neuromorphovis.bmeshi
+
 
 # Globals
 ## Morphology editor
@@ -52,14 +54,10 @@ def DEBUG_LOG(*args, **kwargs):
     if DEBUG:
         print(*args, **kwargs)
 
-# DEBUG_BREAK:
-# import IPython; IPython.embed()
 
 # Info about currently loaded morphologies
 nmvif.ui_options.morphology.morphologies_loaded_directory = None
-# 3D objects sketched around skeletons, equivalent of nmvif.ui_reconstructed_skeleton
-# for multiple morphologies, with their labels as keys
-nmvif.ui_reconstructed_skeletons = dict() # dict[str, list()]
+
 
 ################################################################################
 # UI elements
@@ -182,71 +180,7 @@ class DbsPositioningPanel(bpy.types.Panel):
         col_dup_button.operator('duplicate.morphology',
                                 icon='MOD_PARTICLES')
 
-        # Editing --------------------------------------------------------------
-        col_edit_header = layout.row()
-        col_edit_header.label(text='Editing Samples Coordinates:',
-                              icon='OUTLINER_OB_EMPTY')
 
-        # Morphology edit / update button
-        global is_skeleton_edited
-        if not is_skeleton_edited:
-            col_edit_morph = layout.column(align=True)
-            col_edit_morph.operator('edit.morphology_points',
-                                    icon='MESH_DATA')
-        else:
-            col_update_morph = layout.column(align=True)
-            col_update_morph.operator('update.morphology_points',
-                                      icon='MESH_DATA')
-
-
-################################################################################
-# Support functions
-################################################################################
-
-
-def sketch_morphology_skeleton_guide(morphology, options):
-    """
-    Sketches basic 3D shapes around the morphology skeleton to give it
-    a simple geometric representation.
-
-    NOTE: Customized version of function with same name in nmv.interface.ui.analysis_panel_ops,
-    adjusted to sketch multiple morphologies at once.
-
-    :param morphology:
-        Morphology skeleton.
-    :param options:
-        Instance of NMV options, but it will be modified here to account for the changes we must do.
-    """
-
-    # Set the morphology options to the default after they have been already initialized
-    options.morphology.set_default()
-    # options.morphology.reconstruction_method = \
-    #   nmv.enums.Skeletonization.Method.DISCONNECTED_SKELETON_ORIGINAL
-    #   nmv.enums.Skeletonization.Method.DISCONNECTED_SECTIONS
-    #   nmv.enums.Skeletonization.Method.CONNECTED_SECTION_ORIGINAL # default
-
-    # Clear the scene
-    # nmv.scene.clear_scene()
-
-    # Create a skeletonizer object to build the morphology skeleton
-    builder = nmv.builders.SkeletonBuilder(morphology, options)
-
-    # Draw morphology skeleton and store list of reconstructed objects
-    geometry = builder.draw_morphology_skeleton(
-                    parent_to_soma=False, group_geometry=True)
-    nmvif.ui_reconstructed_skeletons[morphology.label] = geometry
-    return geometry
-        
-
-def get_morphology_from_object(blender_object):
-    """
-    Get the morphology object associated with a blender object.
-    """
-    for label, geometry_list in nmvif.ui_reconstructed_skeletons.items():
-        if blender_object in geometry_list:
-            # return nmvif.ui_morphologies[label]
-            return next((morph for morph in nmvif.ui_morphologies if morph.label == label))
-    return None
 
 ################################################################################
 # Operators
@@ -287,10 +221,8 @@ class ImportMorphology(bpy.types.Operator):
         if context.scene.MorphologyFileImportAll:
             # Import all SWC files in directory
             base_dir = os.path.dirname(context.scene.MorphologyFile)
-            input_files = [
-                os.path.join(base_dir, p) for p in os.listdir(base_dir) if 
-                    p.endswith('.swc')
-            ]
+            input_files = [os.path.join(base_dir, p) for p in os.listdir(base_dir) if 
+                                p.endswith('.swc')]
         else:
             # Import only the selected SWC file
             input_files = [context.scene.MorphologyFile]
@@ -301,126 +233,19 @@ class ImportMorphology(bpy.types.Operator):
 
         # Load each morphology in input directory
         for morph_path in input_files:
-            # Update the morphology label
-            # morph_labels.append(nmv.file.ops.get_file_name_from_path(morph_path))    
+            circuit_data.import_neuron_from_file(morph_path)  
 
-            # Load the morphology from the file
+            # OLD: Load the morphology from the file
             # NOTE: also assigns filename as label to morphology_object
-            nmvif.ui_options.morphology.morphology_file_path = morph_path
-            loading_flag, morphology_object = nmv.file.readers.read_morphology_from_file(
-                options=nmvif.ui_options)
+            # nmvif.ui_options.morphology.morphology_file_path = morph_path
+            # loading_flag, morphology_object = nmv.file.readers.read_morphology_from_file(
+            #     options=nmvif.ui_options)
+            # if loading_flag:
+            #     nmvif.ui_morphologies.append(morphology_object)
 
-            if loading_flag:
-                nmvif.ui_morphologies.append(morphology_object)
-
-
-        # Plot the morphology (whatever issues it contains)
-        for morphology_object in nmvif.ui_morphologies:
-            sketch_morphology_skeleton_guide(
-                morphology=morphology_object,
-                options=copy.deepcopy(nmvif.ui_options))
 
         return {'FINISHED'}
 
-
-
-class EditMorpohologyPoints(bpy.types.Operator):
-    """
-    Update the morphology coordinates following to the repair process
-    """
-
-    # Operator parameters
-    bl_idname = "edit.morphology_points"
-    bl_label = "Edit Coordinates"
-
-    # FIXME: update operator EditMorphologyCoordinates to work with ui_morphologies
-    #        variable and currently selected morphology
-
-
-    def execute(self, context):
-        """
-        Execute the operator.
-
-        :param context:
-            Rendering context
-        :return:
-            'FINISHED'
-        """
-
-        # Create an object of the repairer
-        global morphology_editor
-
-        # Clear the scene
-        nmv.scene.ops.clear_scene()
-
-        # Sketch the morphological skeleton for repair
-        morphology_editor = nmv.edit.MorphologyEditor(
-            morphology=nmvif.ui_morphology, options=nmvif.ui_options)
-        morphology_editor.sketch_morphology_skeleton()
-
-        # Switch to edit mode, to be able to export the mesh
-        bpy.ops.object.mode_set(mode='EDIT')
-
-        # The morphology is edited
-        global is_skeleton_edited
-        is_skeleton_edited = True
-
-        # Update the edit mode
-        global in_edit_mode
-        in_edit_mode = True
-
-        return {'FINISHED'}
-
-
-
-class UpdateMorphologyPointsFromSkeleton(bpy.types.Operator):
-    """
-    Update the morphology coordinates following to the repair process.
-    """
-
-    # Operator parameters
-    bl_idname = "update.morphology_points"
-    bl_label = "Update Coordinates"
-
-
-    def execute(self, context):
-        """
-        Execute the operator.
-
-        :param context:
-            Rendering context
-        :return:
-            'FINISHED'
-        """
-
-        # Create an object of the repairer
-        global morphology_editor
-
-        # Create the morphological skeleton
-        if morphology_editor is not None:
-
-            # Switch back to object mode, to be able to export the mesh
-            bpy.ops.object.mode_set(mode='OBJECT')
-
-            # Update samples of Morphology object based on edited skeleton
-            morphology_editor.update_skeleton_coordinates()
-
-            global is_skeleton_edited
-            is_skeleton_edited = False
-
-        # Clear the scene
-        nmv.scene.ops.clear_scene()
-
-        # Plot the morphology (whatever issues it contains)
-        nmvif.ui.sketch_morphology_skeleton_guide(
-            morphology=nmvif.ui_morphology,
-            options=copy.deepcopy(nmvif.ui_options))
-
-        # Update the edit mode
-        global in_edit_mode
-        in_edit_mode = False
-
-        return {'FINISHED'}
 
 
 class DuplicateMorphology(bpy.types.Operator):
@@ -430,7 +255,7 @@ class DuplicateMorphology(bpy.types.Operator):
 
     # Operator parameters
     bl_idname = "duplicate.morphology"
-    bl_label = "Duplicate Morphology"
+    bl_label = "Mass copy morphology"
 
     # Operator properties (data class)
     offset_x = FloatProperty(
@@ -756,7 +581,6 @@ class ExportMorphologies(bpy.types.Operator):
 # Classes to register with Blender
 _reg_classes = [
     DbsPositioningPanel, ImportMorphology, ExportMorphologies,
-    EditMorpohologyPoints, UpdateMorphologyPointsFromSkeleton,
     DuplicateMorphology, SetDuplicationBoundary
 ]
 

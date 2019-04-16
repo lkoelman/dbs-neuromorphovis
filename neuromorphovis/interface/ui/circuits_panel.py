@@ -20,6 +20,7 @@ from bpy.props import FloatProperty, IntProperty, StringProperty, BoolProperty
 import neuromorphovis as nmv
 import neuromorphovis.interface as nmvif
 import neuromorphovis.file.writers.json as jsonutil
+from neuromorphovis.interface.ui.ui_data import NMV_PROP
 
 ################################################################################
 # State variables
@@ -29,9 +30,9 @@ import neuromorphovis.file.writers.json as jsonutil
 DEBUG = True
 
 # Custom Blender properties used by this module
-_PROP_AX_PRE_GID = nmvif.mkprop('presynaptic_cell_GID')
-_PROP_AX_PRE_NAME = nmvif.mkprop('presynaptic_cell_name')
-_PROP_AX_POST_GIDS = nmvif.mkprop('postsynaptic_cell_GIDs')
+_PROP_AX_PRE_GID = NMV_PROP.AX_PRE_GID
+_PROP_AX_PRE_NAME = NMV_PROP.AX_PRE_NAME
+_PROP_AX_POST_GIDS = NMV_PROP.AX_POST_GIDS
 
 
 ################################################################################

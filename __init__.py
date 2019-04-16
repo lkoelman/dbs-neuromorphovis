@@ -71,38 +71,39 @@ if "bpy" in locals():
 
     # Import the modules
     import neuromorphovis.interface.ui.io_panel
-    import neuromorphovis.interface.ui.analysis_panel
-    import neuromorphovis.interface.ui.edit_panel
+    # import neuromorphovis.interface.ui.analysis_panel
+    # import neuromorphovis.interface.ui.repair_panel
+    # import neuromorphovis.interface.ui.edit_panel
+    # import neuromorphovis.interface.ui.soma_panel
+    # import neuromorphovis.interface.ui.morphology_panel
+    # import neuromorphovis.interface.ui.mesh_panel
     import neuromorphovis.interface.ui.cellpos_panel
     import neuromorphovis.interface.ui.tracks_panel
     import neuromorphovis.interface.ui.circuits_panel
-    import neuromorphovis.interface.ui.soma_panel
-    import neuromorphovis.interface.ui.morphology_panel
-    import neuromorphovis.interface.ui.mesh_panel
 
     # Reloading the modules
     imp.reload(neuromorphovis.interface.ui.io_panel)
-    imp.reload(neuromorphovis.interface.ui.analysis_panel)
-    imp.reload(neuromorphovis.interface.ui.repair_panel)
-    imp.reload(neuromorphovis.interface.ui.edit_panel)
+    # imp.reload(neuromorphovis.interface.ui.analysis_panel)
+    # imp.reload(neuromorphovis.interface.ui.repair_panel)
+    # imp.reload(neuromorphovis.interface.ui.edit_panel)
+    # imp.reload(neuromorphovis.interface.ui.morphology_panel)
+    # imp.reload(neuromorphovis.interface.ui.mesh_panel)
     imp.reload(neuromorphovis.interface.ui.cellpos_panel)
     imp.reload(neuromorphovis.interface.ui.tracks_panel)
     imp.reload(neuromorphovis.interface.ui.circuits_panel)
-    imp.reload(neuromorphovis.interface.ui.morphology_panel)
-    imp.reload(neuromorphovis.interface.ui.mesh_panel)
-
+    
 else:
 
     # Import the modules
     import neuromorphovis.interface.ui.io_panel
-    import neuromorphovis.interface.ui.analysis_panel
-    import neuromorphovis.interface.ui.edit_panel
+    # import neuromorphovis.interface.ui.analysis_panel
+    # import neuromorphovis.interface.ui.edit_panel
+    # import neuromorphovis.interface.ui.soma_panel
+    # import neuromorphovis.interface.ui.morphology_panel
+    # import neuromorphovis.interface.ui.mesh_panel
     import neuromorphovis.interface.ui.cellpos_panel
     import neuromorphovis.interface.ui.tracks_panel
     import neuromorphovis.interface.ui.circuits_panel
-    import neuromorphovis.interface.ui.soma_panel
-    import neuromorphovis.interface.ui.morphology_panel
-    import neuromorphovis.interface.ui.mesh_panel
 
 
 ####################################################################################################
@@ -114,11 +115,11 @@ def register():
 
     # Register panels
     neuromorphovis.interface.ui.io_panel.register_panel()
-    neuromorphovis.interface.ui.analysis_panel.register_panel()
-    neuromorphovis.interface.ui.edit_panel.register_panel()
-    neuromorphovis.interface.ui.soma_panel.register_panel()
-    neuromorphovis.interface.ui.morphology_panel.register_panel()
-    neuromorphovis.interface.ui.mesh_panel.register_panel()
+    # neuromorphovis.interface.ui.analysis_panel.register_panel()
+    # neuromorphovis.interface.ui.edit_panel.register_panel()
+    # neuromorphovis.interface.ui.soma_panel.register_panel()
+    # neuromorphovis.interface.ui.morphology_panel.register_panel()
+    # neuromorphovis.interface.ui.mesh_panel.register_panel()
     neuromorphovis.interface.ui.cellpos_panel.register_panel()
     neuromorphovis.interface.ui.tracks_panel.register_panel()
     neuromorphovis.interface.ui.circuits_panel.register_panel()
@@ -133,10 +134,10 @@ def unregister():
 
     # Un-register panels
     neuromorphovis.interface.ui.io_panel.unregister_panel()
-    neuromorphovis.interface.ui.analysis_panel.unregister_panel()
-    neuromorphovis.interface.ui.repair_panel.unregister_panel()
-    neuromorphovis.interface.ui.soma_panel.unregister_panel()
-    neuromorphovis.interface.ui.morphology_panel.unregister_panel()
+    # neuromorphovis.interface.ui.analysis_panel.unregister_panel()
+    # neuromorphovis.interface.ui.repair_panel.unregister_panel()
+    # neuromorphovis.interface.ui.soma_panel.unregister_panel()
+    # neuromorphovis.interface.ui.morphology_panel.unregister_panel()
     neuromorphovis.interface.ui.cellpos_panel.unregister_panel()
     neuromorphovis.interface.ui.tracks_panel.unregister_panel()
     neuromorphovis.interface.ui.circuits_panel.unregister_panel()

@@ -15,6 +15,8 @@
 # If not, see <http://www.gnu.org/licenses/>.
 ####################################################################################################
 
+from enum import Enum
+
 # Internal imports
 import neuromorphovis as nmv
 import neuromorphovis.options
@@ -43,3 +45,51 @@ ui_reconstructed_skeleton = list()
 # NOTE: If this list contains a single mesh object, then it accounts for the entire mesh after
 # joining all the mesh objects together
 ui_reconstructed_mesh = list()
+
+################################################################################
+# NeuroCircuitVis
+################################################################################
+
+# Prefix for all custom properties on Blender objects
+CUSTOM_PROPERTY_PREFIX = 'NMV_'
+
+nmv_reserved_property_names = {}
+
+
+def mkprop(property_name, dtype):
+    """
+    Make custom property name that is easily identifiable
+    as a reserved NeuroMorphoVis property.
+    """
+    prop_name = CUSTOM_PROPERTY_PREFIX + property_name
+    nmv_reserved_property_names[prop_name] = {'dtype': dtype}
+    return prop_name
+
+class NmvPropertyNames(Enum):
+    """
+    Custom property names for use with Blender objects.
+    """
+    OBJECT_TYPE = mkprop('object_type', str)
+
+    # Neurons
+    SWC_SAMPLES = mkprop('swc_samples', list)
+    SWC_STRUCTURE_ID = mkprop('swc_structure_id', int)
+    CELL_LABEL = mkprop('cell_label', str)
+    CELL_GID = mkprop('cell_gid', int)
+
+    # Streamlines
+    INCLUDE_EXPORT = mkprop('include_export', bool)
+    AX_PRE_GID = mkprop('presynaptic_cell_GID', int)
+    AX_PRE_NAME = mkprop('presynaptic_cell_name', str)
+    AX_POST_GIDS = mkprop('postsynaptic_cell_GIDs', list)
+
+NMV_PROP = NmvPropertyNames
+
+
+class NmvObjectTypes(Enum):
+    STREAMLINE = 'streamline'
+    NEURON_GEOMETRY = 'neuron_geometry'
+    BRAIN_STRUCTURE = 'brain_structure'
+    ELECTRODE = 'electrode'
+
+NMV_OBJ_TYPE = NmvObjectTypes

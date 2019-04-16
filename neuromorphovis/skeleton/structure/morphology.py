@@ -35,9 +35,6 @@ class Morphology:
     A class to represent the morphological skeleton of a tree structure, for example neuron.
     """
 
-    # For assigning new GIDs to morphologies
-    gid_counter = 0
-
     ################################################################################################
     # @__init__
     ################################################################################################
@@ -64,9 +61,7 @@ class Morphology:
         :param mtype:
             Morphology type, if available.
         :param label:
-            A given label to the morphology. If the morphology is loaded from a file, the label
-            will be set to the file prefix, however, if it was loaded from a circuit it will be
-            set to its gid prepended by a 'neuron_' prefix.
+            A given label to the morphology.
         """
 
         # Morphology soma
@@ -91,9 +86,6 @@ class Morphology:
         self.origin_apical_dendrite = copy.deepcopy(apical_dendrite)
 
         # Morphology GID
-        if gid is None:
-            Morphology.gid_counter += 1
-            gid = Morphology.gid_counter
         self.gid = gid
 
         # Morphology type
@@ -101,8 +93,6 @@ class Morphology:
 
         # Morphology label (will be morphology name or gid)
         self.label = label
-        if gid is not None:
-            self.label += '.GID-{}'.format(gid)
 
         # Morphology full bounding box
         self.bounding_box = None
