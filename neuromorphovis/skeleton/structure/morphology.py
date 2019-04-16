@@ -176,24 +176,31 @@ class Morphology:
         # Save new transformation matrix
         self.matrix_world = matrix * self.matrix_world
 
-    ################################################################################################
-    # @has_axon
-    ################################################################################################
+
     def has_axon(self):
         """
         Checks if the morphology has axon reported in the data or not.
 
         :return: True or False.
         """
+        return (self.axon is not None)
 
-        if self.axon is None:
-            return False
 
-        return True
+    def get_axon_terminal_point(self):
+        """
+        Get axon terminal point.
+        """
+        if not self.has_axon():
+            return None
 
-    ################################################################################################
-    # @has_dendrites
-    ################################################################################################
+        terminal_section = self.axon
+        while len(terminal_section.children) > 0:
+            terminal_section = terminal_section.children[0]
+
+        num_pt = len(terminal_section.samples)
+        return terminal_section.samples[num_pt-1]
+
+
     def has_dendrites(self):
         """
         Checks if the morphology has basal dendrites reported in the data or not.
@@ -206,9 +213,7 @@ class Morphology:
 
         return True
 
-    ################################################################################################
-    # @apical_dendrite
-    ################################################################################################
+
     def has_apical_dendrite(self):
         """
         Checks if the morphology has an apical dendrites reported in the data or not.

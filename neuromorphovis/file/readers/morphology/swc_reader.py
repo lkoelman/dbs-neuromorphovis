@@ -28,17 +28,16 @@ import neuromorphovis.file
 import neuromorphovis.skeleton
 
 
-####################################################################################################
-# @SWCReader
-####################################################################################################
-class SWCReader:
 
-    ################################################################################################
-    # @__init__
-    ################################################################################################
+class SWCReader:
+    """
+    Read an SWC file into a structured morphology skeleton.
+    """
+
     def __init__(self,
                  swc_file):
-        """Constructor
+        """
+        Constructor
 
         :param swc_file:
             A given .SWC morphology file.
@@ -71,11 +70,16 @@ class SWCReader:
         # A list of continuous paths extracted from the morphology file
         self.paths = list()
 
-    ################################################################################################
-    # @build_connected_paths_from_samples
-    ################################################################################################
+
     def build_connected_paths_from_samples(self):
-        """Construct a list of connected paths from the samples.
+        """
+        Construct a list of connected paths from the samples.
+
+        @post   self.paths = list[list[nmv.skeleton.Sample]]
+                contains all connected paths
+
+        @post   self.sections_terminal_samples_indices = list[int]
+                contains indices of terminal samples
         """
 
         # Since we have the soma index equal to 1, then start from index number 2
@@ -144,9 +148,7 @@ class SWCReader:
         # Filter the repeated entries in the sections_terminal_samples_indices list
         self.sections_terminal_samples_indices = list(set(self.sections_terminal_samples_indices))
 
-    ################################################################################################
-    # @build_sections_from_paths
-    ################################################################################################
+
     def build_sections_from_paths(self):
         """Builds a list of sections from the paths reconstructed during the reading of the
         morphology.
@@ -190,11 +192,18 @@ class SWCReader:
 
                 self.sections_samples_indices_list.append(section_indices)
 
-    ################################################################################################
-    # @read_samples
-    ################################################################################################
+
     def read_samples(self):
-        """Reads an SWC files and returns a list of all the samples in the file"""
+        """
+        Reads samples from an SWC morphology file.
+
+        Each sample is a list containing: [index<int>, type<int>, 
+        x<float>, y<float>, z<float>, radius<float>, parent_index<int>].
+
+        See SWC format specification:
+        - http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
+        - https://neuroinformatics.nl/swcPlus/
+        """
 
         # Open the file, read it line by line and store the result in list.
         morphology_file = open(self.morphology_file, 'r')
@@ -280,12 +289,11 @@ class SWCReader:
         # Construct the individual sections from the paths
         self.build_sections_from_paths()
 
-    ################################################################################################
-    # @get_nmv_sample_from_samples_list
-    ################################################################################################
+
     def get_nmv_sample_from_samples_list(self,
                                          sample_index):
-        """Gets a NeuroMorphoVis sample from the original list of samples that was parsed from
+        """
+        Gets a NeuroMorphoVis sample from the original list of samples that was parsed from
         the SWC morphology file.
 
         :param sample_index:
@@ -320,9 +328,7 @@ class SWCReader:
         # Return a reference to the reconstructed object
         return nmv_sample
 
-    ################################################################################################
-    # @get_samples_list_by_type
-    ################################################################################################
+
     def get_samples_list_by_type(self,
                                  sample_type):
         """Gets a list of samples of a specific type from the list of morphological samples that
@@ -349,9 +355,7 @@ class SWCReader:
         # Return the list of samples
         return selected_samples_list
 
-    ################################################################################################
-    # @build_connected_paths
-    ################################################################################################
+
     def build_soma(self,
                    axons_arbors,
                    basal_dendrites_arbors,
@@ -444,12 +448,11 @@ class SWCReader:
         # Return a reference to the soma object
         return soma_object
 
-    ################################################################################################
-    # @get_sections_of_specific_type
-    ################################################################################################
+
     def get_sections_of_specific_type(self,
                                       arbor_type):
-        """Returns a list of sections of specific type.
+        """
+        Returns a list of sections of specific type.
 
         :param arbor_type:
             The type of the requested sections.
@@ -515,12 +518,11 @@ class SWCReader:
         # Return a list of all the disconnected sections
         return sections_list
 
-    ################################################################################################
-    # @read_file
-    ################################################################################################
+
     def build_arbors_from_samples(self,
                                   arbor_type):
-        """Builds a list of connected arbors from a list of disconnected samples for a given or
+        """
+        Builds a list of connected arbors from a list of disconnected samples for a given or
         specific type
 
         :param arbor_type:
@@ -539,11 +541,10 @@ class SWCReader:
         # Return a reference to the constructed arbors
         return arbors
 
-    ################################################################################################
-    # @read_file
-    ################################################################################################
+
     def read_file(self):
-        """Reads an SWC morphology file and return a reference to a NeuroMorphoVis morphology
+        """
+        Reads an SWC morphology file and return a reference to a NeuroMorphoVis morphology
         structure.
 
         :return:

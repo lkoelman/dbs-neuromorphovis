@@ -13,6 +13,7 @@ import pickle
 # Blender imports
 import bpy
 from bpy.props import FloatProperty, IntProperty, StringProperty, BoolProperty
+import mathutils
 
 # External imports
 import numpy as np
@@ -125,7 +126,7 @@ def load_streamlines(file_path, label=None, max_num=1e12, min_length=0.0,
     return streamlines_filtered
 
 
-def streamline_coordinates(curve_object):
+def get_curve_point_coordinates(curve_object):
     """
     Get vertex coordinates of Blender curve representing a streamline.
     """
@@ -337,6 +338,8 @@ class StreamlinesPanel(bpy.types.Panel):
         # Button to center view
         layout.column(align=True).operator('view3d.view_selected', icon='RESTRICT_VIEW_OFF')
 
+        layout.column(align=True).operator('axon.attach_stub', icon='RESTRICT_VIEW_OFF')
+
         # Exporting ------------------------------------------------------------
 
         layout.row().label(text='Export Streamlines:', icon='LIBRARY_DATA_DIRECT')
@@ -462,6 +465,72 @@ class AddROI(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class AttachStreamlineAxonStub(bpy.types.Operator):
+    """
+    Add ROI for positioning cells and streamlines.
+    """
+
+    # Operator parameters
+    bl_idname = "axon.attach_stub"
+    bl_label = "Attach streamline to axon stub on cell."
+
+    select_stub = BoolProperty(default=False, name='From stub curve',
+        description='Select axon stub curve rather than cell geometry.')
+
+    def execute(self, context):
+        """
+        Execute the operator.
+
+        @pre    Both streamline and (cell geometry or axon stub curve)
+                are selected.
+        """
+
+        # Get terminal point of axon stub
+        selected = list(context.selected_objects)
+        if self.select_stub:
+            stub_obj = next((obj for obj in selected if
+                                'neuron_morphology_name' in obj.keys()), None)
+            if stub_obj is None:
+                self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
+                return {'FINISHED'}
+            stub_pts = get_curve_point_coordinates(stub_obj)
+            terminal_pt = stub_pts[-1] # assume it's last point
+        else:
+            cell_obj = next((obj for obj in selected if
+                                'neuron_morphology_name' in obj.keys()), None)
+            if cell_obj is None:
+                self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
+                return {'FINISHED'}
+
+            cell_morph = nmvif.ui.cellpos_panel.get_morphology_from_object(cell_obj)
+            terminal_pt = cell_morph.get_axon_terminal_point()
+            if terminal_pt is None:
+                self.report({'ERROR'}, 'Selected cell has no axon.')
+                return {'FINISHED'}
+        
+        # Get closest point on streamline
+        tck_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
+        tck_pts = get_curve_point_coordinates(tck_obj)
+        
+        # Make translation vector
+        p0 = mathutils.Vector(tck_pts[0])
+        p1 = mathutils.Vector(tck_pts[-1])
+        d0 = terminal_pt - p0
+        d1 = terminal_pt - p1
+        if d0.length < d1.length:
+            translation = d0
+        else:
+            translation = d1
+
+        # Translate streamline
+        tck_obj.matrix_world.translation += translation
+        # xform = axon_obj.matrix_world
+        # xform.translation = mathutils.Vector(dup_pt)
+        # axon_obj.matrix_world = xform
+
+        return {'FINISHED'}
+
+
 class ToggleAxonExport(bpy.types.Operator):
     """
     Mark or unmark selected axon for export.
@@ -536,7 +605,7 @@ class ExportStreamlines(bpy.types.Operator):
         # Just export raw streamlines, metadata should be in config file
         streamlines = get_streamlines(selector=lambda crv: crv.get(_PROP_AX_EXPORT, False))
         tck_dict = {
-            crv.name: streamline_coordinates(crv) for crv in streamlines
+            crv.name: get_curve_point_coordinates(crv) for crv in streamlines
         }
 
         # Subdirectories for outputs are defined on io_panel.py
@@ -562,7 +631,7 @@ class ExportStreamlines(bpy.types.Operator):
 # Classes to register with Blender
 _reg_classes = [
     StreamlinesPanel, ImportStreamlines, ExportStreamlines, AddROI,
-    ToggleAxonExport
+    ToggleAxonExport, AttachStreamlineAxonStub
 ]
 
 

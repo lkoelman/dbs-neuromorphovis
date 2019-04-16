@@ -10,14 +10,16 @@ a circuit configuration file.
 # Python imports
 import os
 import json
+import collections
 
 # Blender imports
 import bpy
-from bpy.props import FloatProperty, IntProperty, StringProperty
+from bpy.props import FloatProperty, IntProperty, StringProperty, BoolProperty
 
 # Internal imports
 import neuromorphovis as nmv
 import neuromorphovis.interface as nmvif
+import neuromorphovis.file.writers.json as jsonutil
 
 ################################################################################
 # State variables
@@ -57,6 +59,11 @@ class CircuitsPanel(bpy.types.Panel):
         description="Name for exported circuit",
         default='unnamed-circuit')
 
+    bpy.types.Scene.ExportStreamlinesWithConfig = BoolProperty(
+        name="Export streamlines with config.",
+        description="Export streamlines again when writing circuit config.",
+        default=True)
+
     # --------------------------------------------------------------------------
     # Panel overriden methods
 
@@ -76,14 +83,17 @@ class CircuitsPanel(bpy.types.Panel):
         layout.column(align=True).operator('define.population', icon='MOD_SKIN')
 
         # Projections: associate axons
-        layout.column(align=True).operator('axon.set_pre_cells', icon='FORCE_CURVE')
-        layout.column(align=True).operator('axon.set_post_cells', icon='PARTICLE_TIP')
+        layout.column(align=True).operator(SetAxonPreCell.bl_idname, 
+                                            icon='FORCE_CURVE')
+        layout.column(align=True).operator(SetAxonPostCell.bl_idname,
+                                            icon='PARTICLE_TIP')
 
         # Exporting ------------------------------------------------------------
         layout.row().label(text='Export Circuit:', icon='LIBRARY_DATA_DIRECT')
 
         layout.row().prop(context.scene, 'CircuitName')
-        layout.column(align=True).operator('export.circuit', icon='FILE_SCRIPT')
+        layout.row().prop(context.scene, 'ExportStreamlinesWithConfig')
+        layout.column(align=True).operator(ExportCircuit.bl_idname, icon='FILE_SCRIPT')
 
 
 ################################################################################
@@ -180,7 +190,27 @@ class SetAxonPostCell(bpy.types.Operator):
 
 class ExportCircuit(bpy.types.Operator):
     """
-    Save circuit definition to file
+    Save circuit configuration to file
+
+    The circuit configuration is a JSON file with following layout:
+
+    {
+        'cells': [
+            {
+                'gid': <int>,               (gid ig cell)
+                'morphology': <string/None>,(name of morphology)
+                'transform': <list/None>,   (4x4 transform matrix)
+            },
+            ...
+        ],
+        'connections': [
+            {
+                'axon': <string>,           (name of axon curve in blend file)
+                'pre_gid': <int>,           (gid of source cell for axon)
+                'post_gids': <list[int]>,   (gids of target cells for axon)
+            }
+        ]
+    }
     """
     bl_idname = "export.circuit"
     bl_label = "Export circuit definition"
@@ -195,17 +225,17 @@ class ExportCircuit(bpy.types.Operator):
         :return:
             'FINISHED'
         """
-        circuit_config = {
-            'cells': [], # list[dict] with keys 'gid', 'morphology', 'transform'
-            'connections': [], # list[dict] with keys 'pre_gids', 'post_gids', 'axon_id'
-        }
+        circuit_config = collections.OrderedDict()
+        circuit_config['cells'] = []
+        circuit_config['connections'] = []
 
         # Add all cells and connections
         for morphology in nmvif.ui_morphologies:
+            xform_matrix = [list(morphology.matrix_world[i]) for i in range(4)]
             circuit_config['cells'].append({
                 'gid': morphology.gid,
                 'morphology': morphology.label,
-                'transform': [list(morphology.matrix_world[i]) for i in range(4)]
+                'transform': jsonutil.NoIndent(xform_matrix)
             })
         
         # Find axons tagged for export
@@ -213,7 +243,7 @@ class ExportCircuit(bpy.types.Operator):
                             selector='INCLUDE_EXPORT')
         for curve_obj in streamlines:
             circuit_config['connections'].append({
-                'axon_id': curve_obj.name,
+                'axon': curve_obj.name,
                 'pre_gid': curve_obj.get(_PROP_AX_PRE_GID, None),
                 'post_gids': curve_obj.get(_PROP_AX_POST_GIDS, []),
             })
@@ -229,7 +259,11 @@ class ExportCircuit(bpy.types.Operator):
         out_fname = context.scene.CircuitName + '.json'
         out_fpath = os.path.join(out_fulldir, out_fname)
         with open(out_fpath, 'w') as f:
-            json.dump(circuit_config, f, indent=2)
+            json.dump(circuit_config, f, indent=2, cls=jsonutil.VariableIndentEncoder)
+
+        # Write streamlines if requested
+        if context.scene.ExportStreamlinesWithConfig:
+            bpy.ops.export.streamlines()
 
         return {'FINISHED'}
 
