@@ -124,6 +124,9 @@ def register():
     neuromorphovis.interface.ui.tracks_panel.register_panel()
     neuromorphovis.interface.ui.circuits_panel.register_panel()
 
+    # Register handlers
+    neuromorphovis.interface.ui.circuit_data.register_handlers()
+
 
 ####################################################################################################
 # @unregister

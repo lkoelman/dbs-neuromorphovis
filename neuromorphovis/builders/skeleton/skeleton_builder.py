@@ -35,6 +35,8 @@ import neuromorphovis.shading
 import neuromorphovis.skeleton
 import neuromorphovis.bmeshi
 
+from neuromorphovis.interface.ui.ui_data import NMV_PROP
+
 
 ####################################################################################################
 # @SkeletonBuilder
@@ -193,6 +195,9 @@ class SkeletonBuilder:
 
         # Assign a material to the soma sphere
         nmv.shading.set_material_to_object(soma_sphere, self.soma_materials[0])
+
+        # Assign SWC structure type
+        soma_sphere[NMV_PROP.SWC_STRUCTURE_ID] = 1
 
         # Return a reference to the object
         return soma_sphere
@@ -890,6 +895,7 @@ class SkeletonBuilder:
                         ignore_branching_samples=disconnect_skelecton)
 
                 # Extend the morphology objects list
+                assign_swc_structure_type(basal_dendrites_sections_objects, 3)
                 morphology_objects.extend(basal_dendrites_sections_objects)
 
         # Draw the apical dendrite
@@ -916,6 +922,7 @@ class SkeletonBuilder:
                     ignore_branching_samples=disconnect_skelecton)
 
                 # Extend the morphology objects list
+                assign_swc_structure_type(apical_dendrite_sections_objects, 4)
                 morphology_objects.extend(apical_dendrite_sections_objects)
 
         # Draw the axon
@@ -940,6 +947,7 @@ class SkeletonBuilder:
                     ignore_branching_samples=disconnect_skelecton)
 
                 # Extend the morphology objects list
+                assign_swc_structure_type(axon_sections_objects, 2)
                 morphology_objects.extend(axon_sections_objects)
 
         # Return a reference to the list of drawn objects
@@ -1156,8 +1164,7 @@ class SkeletonBuilder:
             morphology_objects.extend(self.draw_morphology_as_connected_sections(
                 bevel_object=bevel_object, repair_morphology=True, disconnect_skelecton=True))
 
-        # Draw the morphology as a set of connected tubes, where each long SECTION along the arbor
-        # is represented by a continuous tube
+        # DEFAULT METHOD: Draw the morphology as a set of connected tubes, where each long SECTION along the arbor is represented by a continuous tube
         elif method == nmv.enums.Skeletonization.Method.CONNECTED_SECTION_ORIGINAL:
             morphology_objects.extend(self.draw_morphology_as_connected_sections(
                 bevel_object=bevel_object, repair_morphology=False))
@@ -1238,6 +1245,23 @@ class SkeletonBuilder:
                 if obj.name not in group.objects:
                     group.objects.link(obj)
 
+        # Assign SWC structure types
+        soma_object[NMV_PROP.SWC_STRUCTURE_ID] = 1
+
         # Return the list of the drawn morphology objects
         return morphology_objects
 
+
+def assign_swc_structure_type(blend_objects, swc_type):
+    """
+    Label blend objects representing neuron geometry with their
+    SWC structure type:
+
+    0 - undefined
+    1 - soma
+    2 - axon
+    3 - (basal) dendrite
+    4 - apical dendrite
+    """
+    for bobj in blend_objects:
+        bobj[NMV_PROP.SWC_STRUCTURE_ID] = swc_type

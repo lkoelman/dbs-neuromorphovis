@@ -15,8 +15,6 @@
 # If not, see <http://www.gnu.org/licenses/>.
 ####################################################################################################
 
-from enum import Enum
-
 # Internal imports
 import neuromorphovis as nmv
 import neuromorphovis.options
@@ -65,7 +63,7 @@ def mkprop(property_name, dtype):
     nmv_reserved_property_names[prop_name] = {'dtype': dtype}
     return prop_name
 
-class NmvPropertyNames(Enum):
+class NmvPropertyNames:
     """
     Custom property names for use with Blender objects.
     """
@@ -86,10 +84,33 @@ class NmvPropertyNames(Enum):
 NMV_PROP = NmvPropertyNames
 
 
-class NmvObjectTypes(Enum):
+class NmvObjectTypes:
+    """
+    Types of objects in the scene distinguised by the addon.
+
+    NOTE: don't make Enum class, since members won't be basic types
+    """
     STREAMLINE = 'streamline'
     NEURON_GEOMETRY = 'neuron_geometry'
     BRAIN_STRUCTURE = 'brain_structure'
     ELECTRODE = 'electrode'
 
 NMV_OBJ_TYPE = NmvObjectTypes
+
+
+class SwcSampleTypes:
+    """
+    SWC sample types (structure identifier).
+    See http://www.neuronland.org/NLMorphologyConverter/MorphologyFormats/SWC/Spec.html
+
+    Also defined in nmv.consts.arbor_consts.
+    """
+    SOMA = 1
+    AXON = 2
+    BASAL = 3
+    APICAL = 4
+    FORK_POINT = 5
+    END_POINT = 6
+    CUSTOM = 7
+
+SWC_SAMPLE = SwcSampleTypes

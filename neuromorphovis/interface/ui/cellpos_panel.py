@@ -207,11 +207,6 @@ class ImportMorphology(bpy.types.Operator):
             'FINISHED'
         """
 
-        # Globals from this module
-        # NOTE: use ui_options.morphology instead
-        # global current_morphology_label
-        # global current_morphology_path
-
         # NOTE: the difference between
         # - selected in widget: nmv.interface.ui_options.io.morphologies_input_directory 
         # - actually loaded: nmv.interface.ui_options.morphology.morphologies_loaded_directory
@@ -233,16 +228,7 @@ class ImportMorphology(bpy.types.Operator):
 
         # Load each morphology in input directory
         for morph_path in input_files:
-            circuit_data.import_neuron_from_file(morph_path)  
-
-            # OLD: Load the morphology from the file
-            # NOTE: also assigns filename as label to morphology_object
-            # nmvif.ui_options.morphology.morphology_file_path = morph_path
-            # loading_flag, morphology_object = nmv.file.readers.read_morphology_from_file(
-            #     options=nmvif.ui_options)
-            # if loading_flag:
-            #     nmvif.ui_morphologies.append(morphology_object)
-
+            circuit_data.import_neuron_from_file(morph_path)
 
         return {'FINISHED'}
 
@@ -282,29 +268,6 @@ class DuplicateMorphology(bpy.types.Operator):
     ############################################################################
     # Support methods
 
-    def make_duplicate_label(self, morphology):
-        """
-        Generate a name for a duplicate cell.
-        """
-        # Check if morphology is a copy (ends in '.<digits>')
-        match = re.search(r'\.(\d+)$', morphology.label)
-        if match:
-            num_copies = int(match.groups()[0])
-        else:
-            num_copies = 0
-        # Increment digits to name the duplicate
-        while True:
-            num_copies += 1
-            if num_copies >= 1e6:
-                raise Exception('Too many duplicates.')
-            elif num_copies >= 1e3:
-                suffix = '.{:06d}'
-            else:
-                suffix = '.{:03d}'
-            duplicate_label = morphology.label + suffix.format(num_copies)
-            if not any((morph.label == duplicate_label for morph in nmvif.ui_morphologies)):
-                return duplicate_label
-
 
     def make_duplicate_origins(self, context, source_object):
         """
@@ -318,12 +281,19 @@ class DuplicateMorphology(bpy.types.Operator):
         max_duplicates = context.scene.MaxCellDuplicates
 
         # Get bounding box of target volume
-        bounds_obj = context.scene.objects[context.scene.DuplicationBoundaryName]
-        bbox_corners = np.array([bounds_obj.matrix_world * mathutils.Vector(corner)
-                                    for corner in bounds_obj.bound_box])
-        xyz_min = bbox_corners.min(axis=0)
-        xyz_max = bbox_corners.max(axis=0)
-        # xyz_max = [max((corner[j] for corner in bbox_corners)) for j in range(3)]
+        bounds_obj = context.scene.objects.get(context.scene.DuplicationBoundaryName, None)
+        if bounds_obj:
+            bbox_corners = np.array([bounds_obj.matrix_world * mathutils.Vector(corner)
+                                        for corner in bounds_obj.bound_box])
+            xyz_min = bbox_corners.min(axis=0)
+            xyz_max = bbox_corners.max(axis=0)
+            # xyz_max = [max((corner[j] for corner in bbox_corners)) for j in range(3)]
+        else:
+            bbox_corners = np.array([source_object.matrix_world * mathutils.Vector(corner)
+                                        for corner in source_object.bound_box])
+            enlarge_bbox = [1000.0, 1000.0, 1000.0]
+            xyz_min = bbox_corners.min(axis=0) - enlarge_bbox
+            xyz_max = bbox_corners.max(axis=0) + enlarge_bbox
 
         # Coordinates are in micrometers, density in cells / mm^3
         cell_per_um = 1e-3 * density ** (1./3.)
@@ -354,16 +324,17 @@ class DuplicateMorphology(bpy.types.Operator):
             return np.array([])
 
         # Remove points that are not inside boundary volume
-        inside_mask = np.zeros((origins.shape[0],), dtype=bool)
-        for i in range(origins.shape[0]):
-            dup_pt = mathutils.Vector(origins[i,:])
-            found, mesh_pt, normal, face_idx = bounds_obj.closest_point_on_mesh(dup_pt, 1e12)
-            mesh_pt = bounds_obj.matrix_world * mesh_pt # was in object space
-            inside_mask[i] = ((mesh_pt-dup_pt).dot(normal) >= 0.0) if found else False
-        DEBUG_LOG('DBS: {} origin points were inside boundary volume'.format(
-                    inside_mask.sum()))
-        origins_all = origins
-        origins = origins[inside_mask, :]
+        if bounds_obj:
+            inside_mask = np.zeros((origins.shape[0],), dtype=bool)
+            for i in range(origins.shape[0]):
+                dup_pt = mathutils.Vector(origins[i,:])
+                found, mesh_pt, normal, face_idx = bounds_obj.closest_point_on_mesh(dup_pt, 1e12)
+                mesh_pt = bounds_obj.matrix_world * mesh_pt # was in object space
+                inside_mask[i] = ((mesh_pt-dup_pt).dot(normal) >= 0.0) if found else False
+            DEBUG_LOG('DBS: {} origin points were inside boundary volume'.format(
+                        inside_mask.sum()))
+            origins_all = origins
+            origins = origins[inside_mask, :]
 
         # Ensure we don't exceed maximum number of copies
         src_loc = np.array(source_object.location)
@@ -376,8 +347,6 @@ class DuplicateMorphology(bpy.types.Operator):
         DEBUG_LOG('DBS: {} origin points remaining after pruning'.format(origins.shape[0]))
         return origins
 
-    ############################################################################
-    # Operator override methods
 
     # def draw(self, context):
     #     """
@@ -390,6 +359,7 @@ class DuplicateMorphology(bpy.types.Operator):
     #     col.prop(self, "offset_y", slider=False)
     #     col.prop(self, "offset_z", slider=False)
 
+
     def invoke(self, context, event):
         """
         Invoke is used to initialize the operator from the context at the moment
@@ -397,10 +367,9 @@ class DuplicateMorphology(bpy.types.Operator):
         which are then used by execute(). 
         """
         # Set properties
-        if context.scene.DuplicationBoundaryName == 'None':
-            self.report({'ERROR'}, 'Please select a boundary volume first.')
-            return {'FINISHED'}
-
+        # if context.scene.DuplicationBoundaryName == 'None':
+        #     self.report({'ERROR'}, 'Please select a boundary volume first.')
+        #     return {'FINISHED'}
 
         return self.execute(context)
 
@@ -409,13 +378,16 @@ class DuplicateMorphology(bpy.types.Operator):
         """
         Executes the operator.
 
-        :param context: Operator context.
-        :return: {'FINISHED'}
+        :param context:
+            Operator context.
+
+        :return:
+            {'FINISHED'}
         """
         # Get selected morphology
         selected_object = context.scene.objects.active
-        selected_morphology = get_morphology_from_object(selected_object)
-        if selected_morphology is None:
+        selected_neuron = circuit_data.get_neuron_from_blend_object(selected_object)
+        if selected_neuron is None:
             self.report({'ERROR'}, 'Please select a morphology to duplicate')
             return {'FINISHED'}
 
@@ -429,35 +401,26 @@ class DuplicateMorphology(bpy.types.Operator):
 
         for i, dup_pt in enumerate(dup_origins):
             # Duplicate selected morphology
-            duplicate_label = self.make_duplicate_label(selected_morphology)
+            duplicate_label = circuit_data.make_duplicate_label(selected_neuron)
+
             DEBUG_LOG("DBS: creating duplicate morphology '{}'' ({}/{})".format(
                        duplicate_label, i, dup_origins.shape[0]))
 
-            dup_morphology = selected_morphology.duplicate(label=duplicate_label)
-            nmvif.ui_morphologies.append(dup_morphology)
-
-            # Apply transformation to underlying morphology
-            # xform = mathutils.Matrix.Translation(mathutils.Vector(
-            #             (self.offset_x, self.offset_y, self.offset_z)))
-            # dup_morphology.apply_transform(xform)
-
-            # Sketch morphology (create geometry for skeleton)
-            dup_geom_objs = sketch_morphology_skeleton_guide(
-                                morphology=dup_morphology,
-                                options=copy.deepcopy(nmvif.ui_options))
+            neuron_copy = selected_neuron.duplicate(label=duplicate_label)
+            circuit_data.add_neuron(neuron_copy)
 
             # New transform is that of source object with translation to new origin
-            xform_mod = selected_object.matrix_world
+            xform_mod = selected_object.matrix_world.copy()
             xform_mod.translation = mathutils.Vector(dup_pt)
 
-            # First apply the transforms already applied to selected objects
-            # xform_prev = selected_object.matrix_world
-            # xform_new = mathutils.Matrix.Translation(mathutils.Vector(
-            #                 (self.offset_x, self.offset_y, self.offset_z)))
+            # Transform only parent geometry (child geometry matrices are relative)
+            soma_geom = neuron_copy.get_soma_geometry()
+            soma_geom.matrix_world = xform_mod # xform_mod * geom_obj.matrix_world
 
-            # [if morphology updated from geometry] Transform duplicated geometry
-            for geom_obj in dup_geom_objs:
-                geom_obj.matrix_world = xform_mod # xform_mod * geom_obj.matrix_world
+            # ALTERNATIVE: generic transformation
+            # xform = mathutils.Matrix.Translation(mathutils.Vector(
+            #                 (self.offset_x, self.offset_y, self.offset_z)))
+            # bobj.matrix_world = xform * bobj.matrix_world
 
         return {'FINISHED'}
 
@@ -543,29 +506,22 @@ class ExportMorphologies(bpy.types.Operator):
             nmv.file.ops.clean_and_create_directory(out_fulldir)
 
         # Get morphologies to export
-        selected_object = context.scene.objects.active
-        selected_morphology = get_morphology_from_object(selected_object)
-        if selected_morphology is not None:
-            # If specific morphology selected, export only that one
-            exported_morphologies = [selected_morphology]
+        selected_neurons = circuit_data.get_neurons_from_blend_objects(
+                                                list(context.selected_objects))
+
+        # If specific cells selected, only export those
+        if len(selected_neurons) > 0:
+            exported_morphologies = selected_neurons
         else:
-            exported_morphologies = nmvif.ui_morphologies
+            exported_morphologies = circuit_data.get_neurons()
+
         self.report({'DEBUG'}, 'Found {} morphologies to export.'.format(
             len(exported_morphologies)))
         
         # Export the selected morphologies
-        for morphology in nmvif.ui_morphologies:
-            # Apply soma geometry transform to all sample points
-            soma_obj = next((obj for obj in nmvif.ui_reconstructed_skeletons[morphology.label] if 'soma' in obj.name), None)
-            if soma_obj is None:
-                self.report({'ERROR'}, 'Soma geometry not found for morphology {}'.format(
-                                        morphology.label))
-                return {'FINISHED'}
-            morphology.transform_sample_points(soma_obj.matrix_world)
-
-            # Write to SWC file
-            self.report({'DEBUG'}, 'Exporting morphology {}.'.format(morphology.label))
-            nmv.file.write_morphology_to_swc_file(morphology, out_fulldir)
+        for neuron in exported_morphologies:
+            swc_samples = neuron.get_transformed_samples()
+            nmv.file.write_swc_samples_to_swc_file(swc_samples, out_fulldir, neuron.label)
 
         self.report({'INFO'}, 'Morphologies exported to {}'.format(out_fulldir))
 

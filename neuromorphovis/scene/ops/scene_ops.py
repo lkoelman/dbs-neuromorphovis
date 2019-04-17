@@ -661,6 +661,17 @@ def duplicate_object(original_object,
     return duplicated_object
 
 
+def duplicate_simple(bobj):
+    """
+    Duplicate object in the scene without any other side effects.
+    """
+    new_obj = bobj.copy()
+    new_obj.data = bobj.data.copy()
+    new_obj.animation_data_clear()
+    bpy.context.scene.objects.link(new_obj)
+    return new_obj
+
+
 ####################################################################################################
 # @is_object_in_scene
 ####################################################################################################

@@ -15,6 +15,7 @@
 # If not, see <http://www.gnu.org/licenses/>.
 ####################################################################################################
 
+import os.path
 
 # Internal imports
 import neuromorphovis as nmv
@@ -220,6 +221,21 @@ def write_morphology_to_swc_file(morphology_object,
         swc_samples_list, '%s/%s.swc' % (file_path, morphology_object.label))
 
 
+def write_swc_samples_to_swc_file(samples, parent_directory, label):
+    """
+    Write SWC samples in list or array format to file.
+
+    @pre    samples must conform to SWC specification, with correct indices.
+
+    :param samples:
+        An iterable of iterables of length 7 containing SWC samples.
+    """
+    swc_path = os.path.join(parent_directory, label + ".swc")
+    # NOTE: .0f works with both int and float. It rounds floats to nearest.
+    sample_format = "{:.0f} {:.0f} {:f} {:f} {:f} {:f} {:.0f}\n"
+    with open(swc_path, 'w') as file:
+        for sample in samples:
+            file.write(sample_format.format(*sample))
 
 
 

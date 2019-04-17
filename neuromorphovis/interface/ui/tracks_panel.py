@@ -24,6 +24,7 @@ import neuromorphovis as nmv
 import neuromorphovis.scene
 import neuromorphovis.interface as nmvif
 from neuromorphovis.interface.ui.ui_data import NMV_PROP, NMV_OBJ_TYPE
+import neuromorphovis.interface.ui.circuit_data as circuit_data
 
 
 ################################################################################
@@ -325,7 +326,12 @@ class StreamlinesPanel(bpy.types.Panel):
         layout.row().prop(context.scene, 'StreamlineUnitScale')
 
         # Draw Streamlines
-        layout.column(align=True).operator('import.streamlines', icon='IPO')
+        layout.column(align=True).operator('import.streamlines', icon='IMPORT')
+
+        # Edit -----------------------------------------------------------------
+        layout.row().label(text='Edit streamlines:', icon='IPO')
+
+        layout.column(align=True).operator('axon.attach_stub', icon='SNAP_SURFACE')
 
         # ROIs -----------------------------------------------------------------
         layout.row().label(text='ROIs:', icon='ALIASED')
@@ -333,13 +339,10 @@ class StreamlinesPanel(bpy.types.Panel):
         # ROI name
         layout.row().prop(context.scene, 'RoiName')
 
-        # Button to import ROI
         layout.column(align=True).operator('add.roi', icon='IMPORT')
-        
-        # Button to center view
+        layout.column(align=True).operator('scale.roi', icon='MAN_SCALE')
         layout.column(align=True).operator('view3d.view_selected', icon='RESTRICT_VIEW_OFF')
 
-        layout.column(align=True).operator('axon.attach_stub', icon='RESTRICT_VIEW_OFF')
 
         # Exporting ------------------------------------------------------------
 
@@ -427,8 +430,7 @@ class ImportStreamlines(bpy.types.Operator):
 
             # Organize object so we can recognize it
             tck_group.objects.link(crv_obj)
-            prop_name = nmvif.mkprop('object_type')
-            crv_obj[prop_name] = 'streamline'
+            crv_obj[NMV_PROP.OBJECT_TYPE] = NMV_OBJ_TYPE.STREAMLINE
 
         # Save references to objects
         _tck_groups[tck_group.name] = tck_group
@@ -466,14 +468,39 @@ class AddROI(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class ScaleROI(bpy.types.Operator):
+    """
+    Scale transform matrix (scale & translation) by import scale factor.
+    """
+
+    # Operator parameters
+    bl_idname = "scale.roi"
+    bl_label = "Scale ROI mesh"
+
+
+    def execute(self, context):
+        """
+        Execute the operator.
+        """
+        selected = context.selected_objects
+        scale = context.scene.StreamlineUnitScale
+        for bobj in selected:
+            for i in range(3):
+                bobj.matrix_world[i][i] *= scale
+                bobj.matrix_world[i][3] *= scale
+
+
+        return {'FINISHED'}
+
+
 class AttachStreamlineAxonStub(bpy.types.Operator):
     """
-    Add ROI for positioning cells and streamlines.
+    Attach streamline to axon stub or soma if no axon present.
     """
 
     # Operator parameters
     bl_idname = "axon.attach_stub"
-    bl_label = "Attach streamline to axon stub on cell."
+    bl_label = "Attach to cell"
 
     select_stub = BoolProperty(default=False, name='From stub curve',
         description='Select axon stub curve rather than cell geometry.')
@@ -489,14 +516,16 @@ class AttachStreamlineAxonStub(bpy.types.Operator):
         # Get terminal point of axon stub
         selected = list(context.selected_objects)
         if self.select_stub:
-            stub_obj = next((obj for obj in selected if
-                                'neuron_morphology_name' in obj.keys()), None)
-            if stub_obj is None:
-                self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
+            # Stub itself was selected -> get last point
+            selected_neurites = circuit_data.get_neuron_geometries_from_selection(selected)
+            if len(selected_neurites) != 1:
+                self.report({'ERROR'}, 'Please select exactly one neuron geometry element.')
                 return {'FINISHED'}
+            stub_obj = selected_neurites[0]
             stub_pts = get_curve_point_coordinates(stub_obj)
             terminal_pt = stub_pts[-1] # assume it's last point
         else:
+            # Any cell geometry selected -> get axon or soma point
             cell_obj = next((obj for obj in selected if
                                 'neuron_morphology_name' in obj.keys()), None)
             if cell_obj is None:

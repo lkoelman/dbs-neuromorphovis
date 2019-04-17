@@ -20,7 +20,8 @@ from bpy.props import FloatProperty, IntProperty, StringProperty, BoolProperty
 import neuromorphovis as nmv
 import neuromorphovis.interface as nmvif
 import neuromorphovis.file.writers.json as jsonutil
-from neuromorphovis.interface.ui.ui_data import NMV_PROP
+from neuromorphovis.interface.ui.ui_data import NMV_PROP, NMV_OBJ_TYPE
+from neuromorphovis.interface.ui import circuit_data
 
 ################################################################################
 # State variables
@@ -28,11 +29,6 @@ from neuromorphovis.interface.ui.ui_data import NMV_PROP
 
 # Debugging
 DEBUG = True
-
-# Custom Blender properties used by this module
-_PROP_AX_PRE_GID = NMV_PROP.AX_PRE_GID
-_PROP_AX_PRE_NAME = NMV_PROP.AX_PRE_NAME
-_PROP_AX_POST_GIDS = NMV_PROP.AX_POST_GIDS
 
 
 ################################################################################
@@ -127,21 +123,24 @@ class SetAxonPreCell(bpy.types.Operator):
         """
         # Get blender objects representing neuron and axon
         selected = list(context.selected_objects)
-        cell_obj = next((obj for obj in selected if 'neuron_morphology_name' in obj.keys()), None)
-        if cell_obj is None:
-            self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
+
+        # Get selected neuron
+        selected_neurons = circuit_data.get_neurons_from_blend_objects(selected)
+        if len(selected_neurons) != 1:
+            self.report({'ERROR'}, 'Please select exactly one neuron geometry.')
             return {'FINISHED'}
-        axon_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
-        if axon_obj is None:
+        neuron = selected_neurons[0]
+        
+        # Get selected streamline
+        selected_axons = circuit_data.get_geometries_of_type(NMV_OBJ_TYPE.STREAMLINE)
+        if len(selected_axons) == 0:
             self.report({'ERROR'}, 'Please select at least one axon curve.')
             return {'FINISHED'}
 
-        # Get the morphology object
-        cell_morph = nmvif.ui.cellpos_panel.get_morphology_from_object(cell_obj)
-
         # Set pre-synaptic cell GID
-        axon_obj[_PROP_AX_PRE_GID] = cell_morph.gid
-        axon_obj[_PROP_AX_PRE_NAME] = cell_morph.label
+        for axon_obj in selected_axons:
+            axon_obj[NMV_PROP.AX_PRE_GID] = neuron.gid
+            axon_obj[NMV_PROP.AX_PRE_NAME] = neuron.label
 
         # Also toggle the axon for export
         bpy.ops.axon.toggle_export(export=True, toggle=False)
@@ -181,7 +180,7 @@ class SetAxonPostCell(bpy.types.Operator):
 
         # Set pre-synaptic cell GID
         old_post_gids = set(axon_obj.get('postsynaptic_cell_GIDs', []))
-        axon_obj[_PROP_AX_POST_GIDS] = sorted(old_post_gids.union(post_cell_gids))
+        axon_obj[NMV_PROP.AX_POST_GIDS] = sorted(old_post_gids.union(post_cell_gids))
 
         # Also toggle the axon for export
         bpy.ops.axon.toggle_export(export=True, toggle=False)
@@ -231,12 +230,13 @@ class ExportCircuit(bpy.types.Operator):
         circuit_config['connections'] = []
 
         # Add all cells and connections
-        for morphology in nmvif.ui_morphologies:
-            xform_matrix = [list(morphology.matrix_world[i]) for i in range(4)]
+        for neuron in circuit_data.get_neurons():
+            xform_mat = neuron.get_transform()
+            xform_list = [list(xform_mat[i]) for i in range(4)]
             circuit_config['cells'].append({
-                'gid': morphology.gid,
-                'morphology': morphology.label,
-                'transform': jsonutil.NoIndent(xform_matrix)
+                'gid': neuron.gid,
+                'morphology': neuron.label,
+                'transform': jsonutil.NoIndent(xform_list)
             })
         
         # Find axons tagged for export
@@ -245,8 +245,8 @@ class ExportCircuit(bpy.types.Operator):
         for curve_obj in streamlines:
             circuit_config['connections'].append({
                 'axon': curve_obj.name,
-                'pre_gid': curve_obj.get(_PROP_AX_PRE_GID, None),
-                'post_gids': curve_obj.get(_PROP_AX_POST_GIDS, []),
+                'pre_gid': curve_obj.get(NMV_PROP.AX_PRE_GID, None),
+                'post_gids': curve_obj.get(NMV_PROP.AX_POST_GIDS, []),
             })
 
 

@@ -304,7 +304,7 @@ class SWCReader:
                 List of samples, see SWC file specification.
         """
         if len(self.samples_list) == 0:
-            # Add a dummy sample to the list at index 0 to match the indices
+            # Add dummy sample to match 1-based indices used by SWC file
             self.samples_list.append([0, 0, 0.0, 0.0, 0.0, 0.0, 0])
 
         # Add the sample to the list
@@ -316,6 +316,13 @@ class SWCReader:
 
         # Construct the individual sections from the paths
         self.build_sections_from_paths()
+
+
+    def get_samples(self):
+        """
+        Get SWC samples.
+        """
+        return self.samples_list[1:] # ignore dummy sample
 
 
     def get_nmv_sample_from_samples_list(self,
@@ -651,9 +658,6 @@ class SWCReader:
         # Build skeleton components
         skeleton_components = self.build_skeleton_components()
         soma, basal_dendrites_arbors, apical_dendrite_arbor, axon_arbor = skeleton_components
-
-        # Update the morphology label
-        label = neuromorphovis.file.ops.get_file_name_from_path(self.morphology_file)
 
         # Construct the morphology skeleton
         nmv_morphology = neuromorphovis.skeleton.Morphology(
