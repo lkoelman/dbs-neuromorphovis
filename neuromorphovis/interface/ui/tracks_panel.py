@@ -23,8 +23,10 @@ import nibabel as nib
 import neuromorphovis as nmv
 import neuromorphovis.scene
 import neuromorphovis.interface as nmvif
+
 from neuromorphovis.interface.ui.ui_data import NMV_PROP, NMV_OBJ_TYPE
-import neuromorphovis.interface.ui.circuit_data as circuit_data
+from neuromorphovis.geometry.object import curve as nmv_curve
+from neuromorphovis.interface.ui import circuit_data
 
 
 ################################################################################
@@ -224,6 +226,7 @@ def set_streamline_appearance(curve_obj, material=None, solid=True,
         line_data.materials.append(material)
 
 
+
 ################################################################################
 # UI elements
 ################################################################################
@@ -286,6 +289,17 @@ class StreamlinesPanel(bpy.types.Panel):
         default='ROI-1')
 
 
+    bpy.types.Scene.SampleSpacing = FloatProperty(
+        name="Spacing",
+        description="Spacing between streamline samples.",
+        default=1.0)
+
+    bpy.types.Scene.SubsampleFactor = IntProperty(
+        name="Subsample factor",
+        description="Subsample factor",
+        default=1)
+
+
     # --------------------------------------------------------------------------
     # Panel overriden methods
 
@@ -331,7 +345,17 @@ class StreamlinesPanel(bpy.types.Panel):
         # Edit -----------------------------------------------------------------
         layout.row().label(text='Edit streamlines:', icon='IPO')
 
-        layout.column(align=True).operator('axon.attach_stub', icon='SNAP_SURFACE')
+        layout.column(align=True).operator(AttachStreamlineAxonStub.bl_idname,
+                                            icon='SNAP_SURFACE')
+
+        layout.row().prop(context.scene, 'SampleSpacing')
+        layout.column(align=True).operator(SplineToPolyline.bl_idname,
+                                            icon='ALIGN', text='Sample streamline')
+
+        layout.row().prop(context.scene, 'SubsampleFactor')
+        layout.column(align=True).operator(PolylineToSpline.bl_idname,
+                                            icon='PARTICLE_POINT',
+                                            text='Streamline to NURBS')
 
         # ROIs -----------------------------------------------------------------
         layout.row().label(text='ROIs:', icon='ALIASED')
@@ -340,7 +364,7 @@ class StreamlinesPanel(bpy.types.Panel):
         layout.row().prop(context.scene, 'RoiName')
 
         layout.column(align=True).operator('add.roi', icon='IMPORT')
-        layout.column(align=True).operator('scale.roi', icon='MAN_SCALE')
+        layout.column(align=True).operator(ScaleROI.bl_idname, icon='MAN_SCALE')
         layout.column(align=True).operator('view3d.view_selected', icon='RESTRICT_VIEW_OFF')
 
 
@@ -653,6 +677,77 @@ class ExportStreamlines(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class SplineToPolyline(bpy.types.Operator):
+    """
+    Convert spline-type curve to polyline
+    """
+
+    # Operator parameters
+    bl_idname = "spline.to_polyline"
+    bl_label = "Convert spline-type curve to polyline"
+
+    # Named arguments for operator
+    spacing = FloatProperty(
+                name="Sample spacing",
+                description="Spacing between samples",
+                default=1.0)
+
+
+    def execute(self, context):
+        """
+        Execute the operator.
+        """
+        spacing = context.scene.get('SampleSpacing', self.spacing)
+        curve_obj = None
+        for obj in context.selected_objects:
+            if obj.type == 'CURVE':
+                curve_obj = nmv_curve.spline_to_polyline(obj, spacing=spacing)
+                
+
+        # Make curve only selected object
+        if curve_obj:
+            for scene_object in context.scene.objects:
+                scene_object.select = False
+            curve_obj.select = True
+        return {'FINISHED'}
+
+
+class PolylineToSpline(bpy.types.Operator):
+    """
+    Convert polyline to NURBS Curve
+    """
+
+    # Operator parameters
+    bl_idname = "polyline.to_nurbs"
+    bl_label = "Convert polyline to NURBS curve"
+
+    # Named arguments for operator
+    subsample = IntProperty(
+                name="Subsample factor",
+                description="Subsample factor",
+                default=1)
+
+
+    def execute(self, context):
+        """
+        Execute the operator.
+        """
+        subsample = context.scene.get('SubsampleFactor', self.subsample)
+        curve_obj = None
+        for obj in context.selected_objects:
+            if obj.type == 'CURVE':
+                curve_obj = nmv_curve.polyline_to_nurbs(obj, subsample=subsample, 
+                                    origin_to='start')
+                
+
+        # Make curve only selected object
+        if curve_obj:
+            for scene_object in context.scene.objects:
+                scene_object.select = False
+            curve_obj.select = True
+        return {'FINISHED'}
+
+
 ################################################################################
 # GUI Registration
 ################################################################################
@@ -660,8 +755,8 @@ class ExportStreamlines(bpy.types.Operator):
 
 # Classes to register with Blender
 _reg_classes = [
-    StreamlinesPanel, ImportStreamlines, ExportStreamlines, AddROI,
-    ToggleAxonExport, AttachStreamlineAxonStub
+    StreamlinesPanel, ImportStreamlines, ExportStreamlines, AddROI, ScaleROI,
+    ToggleAxonExport, AttachStreamlineAxonStub, SplineToPolyline, PolylineToSpline
 ]
 
 

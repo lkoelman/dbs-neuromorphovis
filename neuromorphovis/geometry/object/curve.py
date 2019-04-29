@@ -20,9 +20,13 @@ import bpy
 from mathutils import Vector, Matrix
 import bmesh
 
+# Third party imports
+import numpy as np
+
 # Internal imports
 import neuromorphovis as nmv
 import neuromorphovis.scene
+from neuromorphovis.geometry import spline
 
 
 def draw_cyclic_curve_from_points(curve_name,
@@ -81,9 +85,10 @@ def draw_polyline_curve(name, vertices, curve_type='POLY',
     for i, coord in enumerate(vertices):
         x,y,z = coord
         polyline.points[i].co = (x, y, z, 1)
+
     if curve_type == 'NURBS':
         polyline.order_u = len(polyline.points)-1
-        polyline.use_endpoint_u = True
+        polyline.use_endpoint_u = True # curve runs to endpoints
 
     # create Object
     curve_obj = bpy.data.objects.new(name, curvedata)
@@ -93,7 +98,7 @@ def draw_polyline_curve(name, vertices, curve_type='POLY',
     bpy.context.scene.objects.active = curve_obj
     bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS') # ORIGIN_CENTER_OF_MASS
 
-    curve_obj.select = select
+    curve_obj.select = select # add to selection
     return curve_obj
 
 
@@ -121,6 +126,76 @@ def draw_polyline_mesh(name, vertices, select=True):
 
     mesh_obj.select = select
     return mesh_obj
+
+
+def polyline_to_nurbs(tck_obj, subsample=1, origin_to=None):
+    """
+    Convert polyline or any curve coordinates to NURBS that interpolates
+
+    @param  crv_obj : bpy.object
+            A CURVE object whose verticel wil be used to create NURBS
+    """
+    # Get streamline points
+    tck_spl = tck_obj.data.splines[0] # also works for polylines
+    tck_pts = [tck_spl.points[i].co[0:3] for i in range(len(tck_spl.points))]
+    ctl_pts = tck_pts[::subsample]
+    if (len(tck_pts) % subsample != 0):
+        # Always include last point
+        ctl_pts.append(tck_pts[-1])
+
+    # Add a generic 'curve data' container for the curve
+    crv_data = bpy.data.curves.new(name=tck_obj.name + '_NURBS', type='CURVE')
+    crv_data.dimensions = '3D'
+    crv_data.resolution_u = 12 # smoothness
+
+    # Add a spline to the curve data (can be NURBS/BEZIER/POLYLINE)
+    spl = crv_data.splines.new('NURBS')
+    spl.points.add(len(ctl_pts)-1) # 1lready 1 point present by default
+    for i, coord in enumerate(ctl_pts):
+        x, y, z = coord
+        spl.points[i].co = (x, y, z, 1)
+
+    # see https://en.wikipedia.org/wiki/Non-uniform_rational_B-spline#Technical_specifications
+    spl.order_u = min(4, len(spl.points))
+    spl.use_endpoint_u = True # curve runs to endpoints
+
+    # Add it as an object to the scene
+    curve_obj = bpy.data.objects.new(tck_obj.name + '_NURBS', crv_data)
+    curve_obj.matrix_world = tck_obj.matrix_world
+
+    # attach to scene and validate context
+    bpy.context.scene.objects.link(curve_obj)
+    bpy.context.scene.objects.active = curve_obj
+    
+    # Set curve origin to its starting point for easy positioning
+    if origin_to is not None:
+        pt_idx = 0 if origin_to == 'start' else -1
+        old_pos = bpy.context.scene.cursor_location
+        new_pos = tck_spl.points[pt_idx].co.to_3d() + tck_obj.matrix_world.translation
+        bpy.context.scene.cursor_location = new_pos
+        bpy.ops.object.origin_set(type='ORIGIN_CURSOR') # ORIGIN_CENTER_OF_MASS
+        bpy.context.scene.cursor_location = old_pos
+
+    return curve_obj
+
+
+def spline_to_polyline(crv_obj, spacing=1.0):
+    """
+    Convert any spline-type curve to a polyline by sampling it
+    at regular intervals.
+    """
+    # sample every X mm and make polyline
+    arclength = spline.arclength(crv_obj)
+    if spacing >= arclength:
+        raise ValueError('Spacing must be larger than length of curve.')
+
+    t_samples = np.arange(0.0, 1.0 + spacing, spacing)
+    t_samples[-1] = 1.0
+    verts = [spline.calct(crv_obj, t) for t in t_samples]
+
+    new_name = crv_obj.name + '_POLY'
+    return draw_polyline_curve(new_name, verts, curve_type='POLY')
+
 
 
 def draw_closed_circle(radius=1,
