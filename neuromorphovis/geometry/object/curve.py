@@ -189,12 +189,34 @@ def spline_to_polyline(crv_obj, spacing=1.0):
     if spacing >= arclength:
         raise ValueError('Spacing must be larger than length of curve.')
 
-    t_samples = np.arange(0.0, 1.0 + spacing, spacing)
-    t_samples[-1] = 1.0
-    verts = [spline.calct(crv_obj, t) for t in t_samples]
+    t_spacing = spacing / arclength
+    t_samples = np.arange(0.0, 1.0 + t_spacing, t_spacing)
+    t_samples = np.concatenate((t_samples[t_samples < 1], [1.0]))
+    # t_samples = np.inspace(0, 1, int(arclength/spacing), endpoint=True)
+
+    verts = [spline.calct(crv_obj, t, local=True) for t in t_samples]
 
     new_name = crv_obj.name + '_POLY'
-    return draw_polyline_curve(new_name, verts, curve_type='POLY')
+    # crv_poly = draw_polyline_curve(new_name, verts, curve_type='POLY')
+
+    # Create underlying curve data
+    curvedata = bpy.data.curves.new(name='PolyLine', type='CURVE')
+    curvedata.dimensions = '3D'
+    polyline = curvedata.splines.new('POLY')
+    polyline.points.add(len(verts)-1)
+    for i, coord in enumerate(verts):
+        x,y,z = coord
+        polyline.points[i].co = (x, y, z, 1)
+
+    # create Scene object
+    crv_poly = bpy.data.objects.new(new_name, curvedata)
+    bpy.context.scene.objects.link(crv_poly)
+
+    # Set coordinate system
+    crv_poly.matrix_world = Matrix(crv_obj.matrix_world) # .copy()
+    crv_poly.matrix_basis = Matrix(crv_obj.matrix_basis) # .copy()
+
+    return crv_poly
 
 
 

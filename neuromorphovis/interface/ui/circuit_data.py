@@ -10,12 +10,12 @@ import bpy
 
 # import neuromorphovis as nmv
 from neuromorphovis.interface.ui import ui_data
-from neuromorphovis.interface.ui.ui_data import NMV_PROP, NMV_OBJ_TYPE
+from neuromorphovis.interface.ui.ui_data import NMV_PROP, NMV_TYPE
 from neuromorphovis.skeleton.neuron import Neuron
 
 nmv_group_names = {
-    NMV_OBJ_TYPE.NEURON_GEOMETRY: 'Neuron Morphologies',
-    NMV_OBJ_TYPE.BRAIN_STRUCTURE: 'Brain Structures',
+    NMV_TYPE.NEURON_GEOMETRY: 'Neuron Morphologies',
+    NMV_TYPE.BRAIN_STRUCTURE: 'Brain Structures',
 }
 
 # all neurons in the scene
@@ -34,11 +34,13 @@ def add_neuron(neuron):
     global neurons
     neurons[neuron.gid] = neuron
 
-    # Add to blender group
+    # Get group object for neurons
     grp_name = 'Neuron Morphologies'
     group = bpy.data.groups.get(grp_name, None)
     if group is None:
         group = bpy.data.groups.new(grp_name)
+    
+    # Add neuron's geometry to group
     for bobj in neuron.geometry:
         if bobj.name not in group.objects:
             group.objects.link(bobj)
@@ -62,7 +64,7 @@ def restore_neurons_from_blend_data(scene):
         swc_type = bobj.get(NMV_PROP.SWC_STRUCTURE_ID, None)
         SOMA_TYPE = 1
         
-        if (nmv_type == NMV_OBJ_TYPE.NEURON_GEOMETRY and swc_type == SOMA_TYPE):
+        if (nmv_type == NMV_TYPE.NEURON_GEOMETRY and swc_type == SOMA_TYPE):
             add_neuron(Neuron(parent_geometry=bobj, draw_geometry=False))
 
 
@@ -109,7 +111,7 @@ def get_neuron_geometries_from_selection(selected):
     Get all objects representing neuron geometries from selection.
     """
     return [obj for obj in selected if
-        obj.get(NMV_PROP.OBJECT_TYPE, None) == NMV_OBJ_TYPE.NEURON_GEOMETRY]
+        obj.get(NMV_PROP.OBJECT_TYPE, None) == NMV_TYPE.NEURON_GEOMETRY]
 
 def get_geometries_of_type(nmv_type, selected):
     """
@@ -117,7 +119,7 @@ def get_geometries_of_type(nmv_type, selected):
     (neuron, streamline, electrode, ...).
 
     :param nmv_type:
-        ui_data.NmvObjectTypes (NMV_OBJ_TYPE)
+        ui_data.NmvObjectTypes (NMV_TYPE)
     """
     return [obj for obj in selected if
         obj.get(NMV_PROP.OBJECT_TYPE, None) == nmv_type]

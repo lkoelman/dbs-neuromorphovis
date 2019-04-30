@@ -24,7 +24,7 @@ import neuromorphovis as nmv
 import neuromorphovis.scene
 import neuromorphovis.interface as nmvif
 
-from neuromorphovis.interface.ui.ui_data import NMV_PROP, NMV_OBJ_TYPE
+from neuromorphovis.interface.ui.ui_data import NMV_PROP, NMV_TYPE
 from neuromorphovis.geometry.object import curve as nmv_curve
 from neuromorphovis.interface.ui import circuit_data
 
@@ -292,7 +292,7 @@ class StreamlinesPanel(bpy.types.Panel):
     bpy.types.Scene.SampleSpacing = FloatProperty(
         name="Spacing",
         description="Spacing between streamline samples.",
-        default=1.0)
+        default=100.0)
 
     bpy.types.Scene.SubsampleFactor = IntProperty(
         name="Subsample factor",
@@ -454,7 +454,7 @@ class ImportStreamlines(bpy.types.Operator):
 
             # Organize object so we can recognize it
             tck_group.objects.link(crv_obj)
-            crv_obj[NMV_PROP.OBJECT_TYPE] = NMV_OBJ_TYPE.STREAMLINE
+            crv_obj[NMV_PROP.OBJECT_TYPE] = NMV_TYPE.STREAMLINE
 
         # Save references to objects
         _tck_groups[tck_group.name] = tck_group
@@ -702,9 +702,21 @@ class SplineToPolyline(bpy.types.Operator):
         for obj in context.selected_objects:
             if obj.type == 'CURVE':
                 curve_obj = nmv_curve.spline_to_polyline(obj, spacing=spacing)
+
+                # Set appearance
+                curve_obj.data.bevel_object = obj.data.bevel_object
+                curve_obj.data.use_fill_caps = obj.data.use_fill_caps
+                curve_obj.data.materials.append(obj.data.materials[0])
+
+                # Add to group
+                for group in bpy.data.groups:
+                    if obj.name in group.objects.keys():
+                        group.objects.link(curve_obj)
+                        break
                 
 
         # Make curve only selected object
+        context.active_object = curve_obj
         if curve_obj:
             for scene_object in context.scene.objects:
                 scene_object.select = False
@@ -738,6 +750,18 @@ class PolylineToSpline(bpy.types.Operator):
             if obj.type == 'CURVE':
                 curve_obj = nmv_curve.polyline_to_nurbs(obj, subsample=subsample, 
                                     origin_to='start')
+
+                # Set appearance
+                curve_obj.data.bevel_object = obj.data.bevel_object
+                curve_obj.data.use_fill_caps = obj.data.use_fill_caps
+                curve_obj.data.materials.append(obj.data.materials[0])
+
+                # Add to group
+                for group in bpy.data.groups:
+                    if obj.name in group.objects.keys():
+                        group.objects.link(curve_obj)
+                        break
+
                 
 
         # Make curve only selected object

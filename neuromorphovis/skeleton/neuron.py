@@ -13,7 +13,7 @@ import mathutils
 
 import neuromorphovis as nmv
 from neuromorphovis.interface.ui import ui_data
-from neuromorphovis.interface.ui.ui_data import NMV_PROP, SWC_SAMPLE, NMV_OBJ_TYPE
+from neuromorphovis.interface.ui.ui_data import NMV_PROP, SWC_SAMPLE, NMV_TYPE
 from neuromorphovis.scene.ops import scene_ops
 
 # For assigning new GIDs to morphologies
@@ -112,7 +112,7 @@ class Neuron(object):
             for bobj in self.geometry:
                 bobj[NMV_PROP.CELL_LABEL] = self.label
                 bobj[NMV_PROP.CELL_GID] = self.gid
-                bobj[NMV_PROP.OBJECT_TYPE] = NMV_OBJ_TYPE.NEURON_GEOMETRY
+                bobj[NMV_PROP.OBJECT_TYPE] = NMV_TYPE.NEURON_GEOMETRY
 
             # Save neuron data on Blend geometry
             self.serialize_to_blend()

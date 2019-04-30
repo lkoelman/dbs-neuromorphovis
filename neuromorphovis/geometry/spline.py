@@ -147,10 +147,18 @@ def B(i,k,t,knots):
 #t=0 begining of the curve
 #t=1 ending of the curve
 
-def calct(obj, t):
+def calct(obj, t, local=False):
+    """
+    @param  local : bool
+            Use local coordinates rather than world coordinates
+    """
 
     spl=None
-    mw = obj.matrix_world
+    if local:
+        mw = Matrix.Identity(4)
+    else:
+        mw = obj.matrix_world
+    
     if obj.data.splines.active==None:
         if len(obj.data.splines)>0:
             spl=obj.data.splines[0]
@@ -210,7 +218,7 @@ def arclength(obj):
         a = calct(obj, ti)
         b = calct(obj, tf)
         r = (b-a).magnitude
-        length+=r
+        length += r
 
     return length
 

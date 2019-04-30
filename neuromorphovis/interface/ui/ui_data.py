@@ -59,6 +59,7 @@ def mkprop(property_name, dtype):
     Make custom property name that is easily identifiable
     as a reserved NeuroMorphoVis property.
     """
+    global nmv_reserved_property_names
     prop_name = CUSTOM_PROPERTY_PREFIX + property_name
     nmv_reserved_property_names[prop_name] = {'dtype': dtype}
     return prop_name
@@ -74,6 +75,7 @@ class NmvPropertyNames:
     SWC_STRUCTURE_ID = mkprop('swc_structure_id', int)
     CELL_LABEL = mkprop('cell_label', str)
     CELL_GID = mkprop('cell_gid', int)
+    POP_LABEL = mkprop('pop_label', str)
 
     # Streamlines
     INCLUDE_EXPORT = mkprop('include_export', bool)
@@ -91,11 +93,18 @@ class NmvObjectTypes:
     NOTE: don't make Enum class, since members won't be basic types
     """
     STREAMLINE = 'streamline'
-    NEURON_GEOMETRY = 'neuron_geometry'
-    BRAIN_STRUCTURE = 'brain_structure'
-    ELECTRODE = 'electrode'
+    NEURON_GEOMETRY = 'neuron_geometry' # full neuron geometry
+    NEURON_PROXY = 'neuron_proxy'       # proxy object for positioning neuron
+    BRAIN_STRUCTURE = 'brain_structure' # anatomical brain structures
+    ELECTRODE = 'electrode'             # electrode geometry
 
-NMV_OBJ_TYPE = NmvObjectTypes
+NMV_TYPE = NmvObjectTypes
+
+def set_nmv_type(obj, nmv_type):
+    obj[NmvPropertyNames.OBJECT_TYPE] = nmv_type
+
+def get_nmv_type(obj):
+    return obj.get(NmvPropertyNames.OBJECT_TYPE, None)
 
 
 class SwcSampleTypes:
