@@ -113,7 +113,7 @@ def get_neuron_geometries_from_selection(selected):
     return [obj for obj in selected if
         obj.get(NMV_PROP.OBJECT_TYPE, None) == NMV_TYPE.NEURON_GEOMETRY]
 
-def get_geometries_of_type(nmv_type, selected):
+def get_geometries_of_type(nmv_type, selected, selector=None):
     """
     Get only the blender objects that represent the given NMV object type
     (neuron, streamline, electrode, ...).
@@ -121,8 +121,17 @@ def get_geometries_of_type(nmv_type, selected):
     :param nmv_type:
         ui_data.NmvObjectTypes (NMV_TYPE)
     """
-    return [obj for obj in selected if
-        obj.get(NMV_PROP.OBJECT_TYPE, None) == nmv_type]
+    if isinstance(nmv_type, str):
+        nmv_type = [nmv_type]
+
+    if selector is None:
+        selector = lambda crv: True
+    elif isinstance(selector, str):
+        selector = lambda crv: crv.get(selector, False)
+
+    return [obj for obj in selected if (
+                (obj.get(NMV_PROP.OBJECT_TYPE, None) in nmv_type)
+                and (selector(obj)))]
 
 
 @bpy.app.handlers.persistent

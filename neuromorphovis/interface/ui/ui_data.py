@@ -100,6 +100,8 @@ class NmvObjectTypes:
 
 NMV_TYPE = NmvObjectTypes
 
+NEURON_TYPES = [NMV_TYPE.NEURON_GEOMETRY, NMV_TYPE.NEURON_PROXY]
+
 def set_nmv_type(obj, nmv_type):
     obj[NmvPropertyNames.OBJECT_TYPE] = nmv_type
 

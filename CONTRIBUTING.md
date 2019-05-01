@@ -85,5 +85,11 @@ Useful commands, search using spacebar menu.
 
 - `View Selected` : does what it says
 
-- Don't clip large / far-away objects:
+- Don't clip far-away objects:
     - `View > Properties > View > Clip: End` > set to higher value
+
+- Enable faster selection:
+    - Preferences > System > Selection > tick 'OpenGL Occlusion Queries'
+
+- Snap to objects during selection/move:
+    - `SHIFT+TAB` or Magnet icon + set snap to Vertex

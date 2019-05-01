@@ -138,7 +138,7 @@ def get_curve_point_coordinates(curve_object):
         raise ValueError(curve_object.type)
     crv_geom = curve_object.data.splines[0]
     num_pts = len(crv_geom.points)
-    return [crv_geom.points[i].co[0:3] for i in range(num_pts)]
+    return [(curve_object.matrix_world * crv_geom.points[i].co)[0:3] for i in range(num_pts)]
 
 
 def get_streamline_material(state='DEFAULT'):
@@ -345,7 +345,7 @@ class StreamlinesPanel(bpy.types.Panel):
         # Edit -----------------------------------------------------------------
         layout.row().label(text='Edit streamlines:', icon='IPO')
 
-        layout.column(align=True).operator(AttachStreamlineAxonStub.bl_idname,
+        layout.column(align=True).operator(AttachAxonToNeuron.bl_idname,
                                             icon='SNAP_SURFACE')
 
         layout.row().prop(context.scene, 'SampleSpacing')
@@ -517,17 +517,30 @@ class ScaleROI(bpy.types.Operator):
         return {'FINISHED'}
 
 
-class AttachStreamlineAxonStub(bpy.types.Operator):
+class AttachAxonToNeuron(bpy.types.Operator):
     """
     Attach streamline to axon stub or soma if no axon present.
     """
 
     # Operator parameters
-    bl_idname = "axon.attach_stub"
-    bl_label = "Attach to cell"
+    bl_idname = "axon.attach"
+    bl_label = "Attach axon to neuron"
 
-    select_stub = BoolProperty(default=False, name='From stub curve',
+    select_stub = BoolProperty(
+        default=False,
+        name='From stub curve',
         description='Select axon stub curve rather than cell geometry.')
+
+    copy_axon = BoolProperty(
+        default=False,
+        name='Copy axon before move',
+        description='Select axon stub curve rather than cell geometry.')
+
+    associate_neuron = BoolProperty(
+        default=True,
+        name='Associate axon & neuron',
+        description='Associate axon with neuron GID')
+
 
     def execute(self, context):
         """
@@ -537,50 +550,79 @@ class AttachStreamlineAxonStub(bpy.types.Operator):
                 are selected.
         """
 
-        # Get terminal point of axon stub
+        
         selected = list(context.selected_objects)
-        if self.select_stub:
-            # Stub itself was selected -> get last point
-            selected_neurites = circuit_data.get_neuron_geometries_from_selection(selected)
-            if len(selected_neurites) != 1:
-                self.report({'ERROR'}, 'Please select exactly one neuron geometry element.')
-                return {'FINISHED'}
-            stub_obj = selected_neurites[0]
-            stub_pts = get_curve_point_coordinates(stub_obj)
-            terminal_pt = stub_pts[-1] # assume it's last point
-        else:
-            # Any cell geometry selected -> get axon or soma point
-            cell_obj = next((obj for obj in selected if
-                                'neuron_morphology_name' in obj.keys()), None)
-            if cell_obj is None:
-                self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
-                return {'FINISHED'}
 
-            cell_morph = nmvif.ui.cellpos_panel.get_morphology_from_object(cell_obj)
-            terminal_pt = cell_morph.get_axon_terminal_point()
-            if terminal_pt is None:
-                self.report({'ERROR'}, 'Selected cell has no axon.')
-                return {'FINISHED'}
-        
-        # Get closest point on streamline
-        tck_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
-        tck_pts = get_curve_point_coordinates(tck_obj)
-        
-        # Make translation vector
-        p0 = mathutils.Vector(tck_pts[0])
-        p1 = mathutils.Vector(tck_pts[-1])
-        d0 = terminal_pt - p0
-        d1 = terminal_pt - p1
-        if d0.length < d1.length:
-            translation = d0
-        else:
-            translation = d1
+        # Get axon and neuron geometries
+        axon_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
+        neuron_objects = circuit_data.get_geometries_of_type(
+            (NMV_TYPE.NEURON_PROXY, NMV_TYPE.NEURON_GEOMETRY), selected)
 
-        # Translate streamline
-        tck_obj.matrix_world.translation += translation
-        # xform = axon_obj.matrix_world
-        # xform.translation = mathutils.Vector(dup_pt)
-        # axon_obj.matrix_world = xform
+        # Get axon sample points
+        axon_pts = get_curve_point_coordinates(axon_obj)
+
+        # Check preconditions
+        if not self.copy_axon and len(neuron_objects) > 1:
+            self.report({'ERROR'},
+                "Select option 'copy_axon' when using multiple target neurons")
+            return {'CANCELLED'}
+
+        for neuron_obj in neuron_objects:
+        
+            # Get point of attachment
+            if self.select_stub:
+                # Stub itself was selected -> get last point
+                stub_obj = neuron_obj
+                stub_pts = get_curve_point_coordinates(stub_obj)
+                attachment_pt = stub_pts[-1] # assume it's last point
+            else:
+                # Any cell geometry selected -> get axon or soma point
+                neuron = circuit_data.get_neuron_from_blend_object(neuron_obj)
+                if neuron:
+                    attachment_pt = neuron.get_axon_terminal_point()
+                else:
+                    attachment_pt = neuron_obj.matrix_world.translation
+            
+            
+            # Translate closest end of axon to attachment point
+            p0 = mathutils.Vector(axon_pts[0])
+            p1 = mathutils.Vector(axon_pts[-1])
+            d0 = attachment_pt - p0
+            d1 = attachment_pt - p1
+            if d0.length < d1.length:
+                translation = d0
+            else:
+                translation = d1
+
+            # Copy axon curve before translation if requested
+            if self.copy_axon:
+                # Copy the axon
+                new_obj = axon_obj.copy()
+                new_obj.data = axon_obj.data.copy()
+                new_obj.animation_data_clear()
+                bpy.context.scene.objects.link(new_obj)
+
+                # Add to group
+                for group in bpy.data.groups:
+                    if axon_obj.name in group.objects.keys():
+                        group.objects.link(new_obj)
+                target_obj = new_obj
+            else:
+                target_obj = axon_obj
+
+            # Translate streamline
+            target_obj.matrix_world.translation += translation
+            # xform = axon_obj.matrix_world
+            # xform.translation = mathutils.Vector(dup_pt)
+            # axon_obj.matrix_world = xform
+
+            # Set pre-synaptic cell GID
+            if self.associate_neuron:
+                target_obj[NMV_PROP.AX_PRE_GID] = neuron_obj.get(NMV_PROP.CELL_GID, None)
+                target_obj[NMV_PROP.AX_PRE_NAME] = neuron_obj.name
+
+            self.report({'INFO'}, "Attached axon '{}' to neuron '{}'".format(
+                        target_obj.name, neuron_obj.name))
 
         return {'FINISHED'}
 
@@ -598,6 +640,9 @@ class ToggleAxonExport(bpy.types.Operator):
     
     export = BoolProperty(default=True, name='Mark axon for export',
                 description='If toggle is False, set the export status.')
+
+    change_material = BoolProperty(default=False, name='Change material',
+                description='Change material to export color.')
 
     def execute(self, context):
         """
@@ -626,9 +671,10 @@ class ToggleAxonExport(bpy.types.Operator):
             curve[_PROP_AX_EXPORT] = should_export
 
             # Adjust material property to reflect inclusion
-            material = mat_include if should_export else mat_exclude # we flipped it!
-            curve.data.materials.clear()
-            curve.data.materials.append(material)
+            if self.change_material:
+                material = mat_include if should_export else mat_exclude # we flipped it!
+                curve.data.materials.clear()
+                curve.data.materials.append(material)
 
 
         return {'FINISHED'}
@@ -657,7 +703,9 @@ class ExportStreamlines(bpy.types.Operator):
             'FINISHED'
         """
         # Just export raw streamlines, metadata should be in config file
-        streamlines = get_streamlines(selector=lambda crv: crv.get(_PROP_AX_EXPORT, False))
+        streamlines = circuit_data.get_geometries_of_type(
+                        NMV_TYPE.STREAMLINE,
+                        selector=lambda crv: crv.get(_PROP_AX_EXPORT, False))
         tck_dict = {
             crv.name: get_curve_point_coordinates(crv) for crv in streamlines
         }
@@ -712,7 +760,6 @@ class SplineToPolyline(bpy.types.Operator):
                 for group in bpy.data.groups:
                     if obj.name in group.objects.keys():
                         group.objects.link(curve_obj)
-                        break
                 
 
         # Make curve only selected object
@@ -760,7 +807,6 @@ class PolylineToSpline(bpy.types.Operator):
                 for group in bpy.data.groups:
                     if obj.name in group.objects.keys():
                         group.objects.link(curve_obj)
-                        break
 
                 
 
@@ -772,6 +818,45 @@ class PolylineToSpline(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class OriginToCurveEnd(bpy.types.Operator):
+    """
+    Convert polyline to NURBS Curve
+    """
+
+    # Operator parameters
+    bl_idname = "curve.origin_to_end"
+    bl_label = "Set curve origin to end point"
+
+    # Named arguments for operator
+    to_start = BoolProperty(
+                    default=False,
+                    name="Origin to start",
+                    description="Set origin to curve start point instead of end.")
+
+
+    def execute(self, context):
+        """
+        Execute the operator.
+        """
+        for obj in context.selected_objects:
+            if obj.type != 'CURVE':
+                continue
+
+            # Get curve start/end point
+            spl = obj.data.splines[0] # also works for polylines
+            pt_idx = 0 if self.to_start else -1
+            end_pt = (obj.matrix_world * spl.points[pt_idx].co).to_3d()
+
+            # Set object origin
+            old_pos = context.scene.cursor_location
+            bpy.context.scene.cursor_location = end_pt
+            bpy.ops.object.origin_set(type='ORIGIN_CURSOR')
+            bpy.context.scene.cursor_location = old_pos
+            context.scene.update()
+
+        return {'FINISHED'}
+
+
 ################################################################################
 # GUI Registration
 ################################################################################
@@ -780,7 +865,8 @@ class PolylineToSpline(bpy.types.Operator):
 # Classes to register with Blender
 _reg_classes = [
     StreamlinesPanel, ImportStreamlines, ExportStreamlines, AddROI, ScaleROI,
-    ToggleAxonExport, AttachStreamlineAxonStub, SplineToPolyline, PolylineToSpline
+    ToggleAxonExport, AttachAxonToNeuron, SplineToPolyline, PolylineToSpline,
+    OriginToCurveEnd
 ]
 
 

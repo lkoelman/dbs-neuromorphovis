@@ -13,7 +13,7 @@ import json
 import collections
 
 # Blender imports
-# import bgl
+import bgl
 import blf
 import bpy
 from bpy.props import StringProperty, BoolProperty, EnumProperty
@@ -25,9 +25,9 @@ from mathutils import Vector
 
 # Internal imports
 import neuromorphovis as nmv
-import neuromorphovis.interface as nmvif
 import neuromorphovis.file.writers.json as jsonutil
-from neuromorphovis.interface.ui.ui_data import NMV_PROP, NMV_TYPE, set_nmv_type, get_nmv_type
+from neuromorphovis.interface.ui.ui_data import (
+    NMV_PROP, NMV_TYPE, NEURON_TYPES, set_nmv_type, get_nmv_type)
 from neuromorphovis.interface.ui import circuit_data
 
 ################################################################################
@@ -194,6 +194,10 @@ class AssignPopulation(bpy.types.Operator):
 class SetAxonPreCell(bpy.types.Operator):
     """
     Set pre-synaptic cell for axon
+
+    @post   Blender object representing axon has custom property entries
+            AX_PRE_GID and AX_PRE_NAME set to the presynaptic neuron's GID
+            and label.
     """
     bl_idname = "axon.set_pre_cells"
     bl_label = "Associate PRE cell"
@@ -236,10 +240,13 @@ class SetAxonPreCell(bpy.types.Operator):
 
 class SetAxonPostCell(bpy.types.Operator):
     """
-    Set post-synaptic cell for axon
+    Set axon target cells.
+
+    @post   For each selected axon, all the selected neurons are appended
+            the the axon's target GIDs.
     """
     bl_idname = "axon.set_post_cells"
-    bl_label = "Associate POST cell"
+    bl_label = "Set axon target cells"
 
     def execute(self, context):
         """
@@ -250,23 +257,28 @@ class SetAxonPostCell(bpy.types.Operator):
         :return:
             'FINISHED'
         """
-        # Get blender objects representing neuron and axon
         selected = list(context.selected_objects)
-        axon_obj = next((obj for obj in selected if obj.type == 'CURVE'), None)
-        if axon_obj is None:
-            self.report({'ERROR'}, 'Please select at least one axon curve.')
-            return {'FINISHED'}
 
         # Get cell GID of all selected object that represent neuron geometry
-        post_cell_gids = set((obj['neuron_morphology_gid'] for obj in selected
-                                if 'neuron_morphology_gid' in obj.keys()))
-        if len(post_cell_gids) == 0:
-            self.report({'ERROR'}, 'Please select at least one neuronal geometry element.')
+        neuron_objs = circuit_data.get_geometries_of_type(
+                            (NMV_TYPE.NEURON_GEOMETRY, NMV_TYPE.NEURON_PROXY),
+                            selected)
+
+        post_cell_gids = set((obj[NMV_PROP.CELL_GID] for obj in neuron_objs
+                                if NMV_PROP.CELL_GID in obj.keys()))
+        
+        # Get blender objects representing neuron and axon
+        axon_objs = circuit_data.get_geometries_of_type(
+                                    NMV_TYPE.STREAMLINE, selected)
+
+        if len(post_cell_gids) == 0 or len(axon_objs) == 0:
+            self.report({'ERROR'}, 'Please select at least one axon and neuron.')
             return {'FINISHED'}
 
         # Set pre-synaptic cell GID
-        old_post_gids = set(axon_obj.get('postsynaptic_cell_GIDs', []))
-        axon_obj[NMV_PROP.AX_POST_GIDS] = sorted(old_post_gids.union(post_cell_gids))
+        for axon_obj in axon_objs:
+            old_post_gids = set(axon_obj.get('postsynaptic_cell_GIDs', []))
+            axon_obj[NMV_PROP.AX_POST_GIDS] = sorted(old_post_gids.union(post_cell_gids))
 
         # Also toggle the axon for export
         bpy.ops.axon.toggle_export(export=True, toggle=False)
@@ -315,20 +327,42 @@ class ExportCircuit(bpy.types.Operator):
         circuit_config['cells'] = []
         circuit_config['connections'] = []
 
+        # TODO: change units based on saved units when importing
+        circuit_config['units'] = {
+            'transforms': 'um',
+            'morphologies': 'um',
+            'axons': 'um',
+        }
+
+        # Get all neurons and axons in the scene
+        neurons = circuit_data.get_neurons()
+        axons = circuit_data.get_geometries_of_type(
+                                        NMV_TYPE.STREAMLINE,
+                                        selector=NMV_PROP.INCLUDE_EXPORT)
+
         # Add all cells and connections
-        for neuron in circuit_data.get_neurons():
+        for neuron in neurons:
             xform_mat = neuron.get_transform()
             xform_list = [list(xform_mat[i]) for i in range(4)]
+
+            # Gather outgoing and incoming axosn
+            efferent_axon = next(
+                (ax for ax in axons if neuron.gid == ax.get(NMV_PROP.AX_PRE_GID, -1)),
+                None)
+            afferent_axons = set(
+                [ax.name for ax in axons if 
+                    neuron.gid in ax.get(NMV_PROP.AX_POST_GIDS, [])])
+
             circuit_config['cells'].append({
                 'gid': neuron.gid,
                 'morphology': neuron.label,
-                'transform': jsonutil.NoIndent(xform_list)
+                'transform': jsonutil.NoIndent(xform_list),
+                'axon': efferent_axon,
+                'afferent_axons': afferent_axons,
             })
         
         # Find axons tagged for export
-        streamlines = nmvif.ui.tracks_panel.get_streamlines(
-                            selector='INCLUDE_EXPORT')
-        for curve_obj in streamlines:
+        for curve_obj in axons:
             circuit_config['connections'].append({
                 'axon': curve_obj.name,
                 'pre_gid': curve_obj.get(NMV_PROP.AX_PRE_GID, None),
@@ -338,7 +372,7 @@ class ExportCircuit(bpy.types.Operator):
 
         # Subdirectories for outputs are defined on io_panel.py
         out_basedir = context.scene.OutputDirectory
-        out_fulldir = os.path.join(out_basedir, 'circuits')
+        out_fulldir = os.path.join(out_basedir, 'cells')
         if not nmv.file.ops.path_exists(out_fulldir):
             nmv.file.ops.clean_and_create_directory(out_fulldir)
 
@@ -355,75 +389,75 @@ class ExportCircuit(bpy.types.Operator):
         return {'FINISHED'}
 
 
-def draw_labels_callback(self, context):
+
+class OverlayCustomProperty(bpy.types.Operator):
     """
-    Callback function for drawing on the screen.
-    """
-
-    # camera = context.scene.camera # first needs to be aligned with view
-    font_id = 0  # XXX, need to find out how best to get this.
-    font_size = 10
-
-    # area = context.area # next((a for a in context.screen.areas if a.type == 'VIEW_3D'))
-    viewport = context.region # area.regions[4]
-    region = context.space_data.region_3d # area.spaces[0].region_3d
-
-    for obj in context.scene.objects:
-
-        # Check if it's a neuron with population label
-        if get_nmv_type(obj) not in (NMV_TYPE.NEURON_GEOMETRY,
-                                     NMV_TYPE.NEURON_PROXY):
-            continue
-        pop_label = obj.get(NMV_PROP.POP_LABEL, None)
-        if pop_label is None:
-            continue
-
-        # Get bounding box
-        # bbox_corners = np.array([obj.matrix_world * Vector(corner)
-        #                                 for corner in obj.bound_box])
-        # xyz_min = bbox_corners.min(axis=0)
-        # xyz_max = bbox_corners.max(axis=0)
-        # world_loc = Vector(0.5 * (xyz_min + xyz_max))
-        world_loc = obj.matrix_world.translation
-
-        # Get screen position of object
-        # ALT1: camera.getScreenPosition(obj)
-        # ALT2: bpy_extras.view3d_utils.location_3d_to_region_2d(...)
-        # ALT3: bpy_extras.object_utils.world_to_camera_view(scene, camera_obj, co_3d)
-
-        # screen_loc = bpy_extras.object_utils.world_to_camera_view(
-        #                 context.scene, camera, world_loc)
-
-        # view_mat = context.space_data.region_3d.perspective_matrix
-        # total_mat = view_mat * obj.matrix_world
-        # screen_loc = total_mat.translation # (0, 0, 0) in object spac 
-
-        screen_loc = bpy_extras.view3d_utils.location_3d_to_region_2d(
-                                                viewport, region, world_loc)
-
-        # draw some text
-        if screen_loc:
-            x, y = screen_loc[0:2]
-            blf.position(font_id, x, y, 0.0)
-            blf.size(font_id, font_size, 72)
-            blf.draw(font_id, pop_label)
-
-
-class ShowPopLabels(bpy.types.Operator):
-    """
-    Show population labels on the screen
+    Overlay custom property on screen.
     """
 
-    bl_idname = "populations.show_labels"
-    bl_label = "Show population labels on the screen"
+    bl_idname = "overlay.property_custom"
+    bl_label = "Overlay custom property on screen"
+
+    # Operator arguments
+    default_prop_name = 'Select' # "/".join((NMV_PROP.OBJECT_TYPE,
+                                 # NMV_PROP.POP_LABEL,
+                                 # NMV_PROP.INCLUDE_EXPORT))
+
+    default_candidates = [(item, item, 'Property "{}"'.format(item)) for 
+                            item in (default_prop_name,
+                                      NMV_PROP.OBJECT_TYPE,
+                                      NMV_PROP.POP_LABEL,
+                                      NMV_PROP.CELL_GID,
+                                      NMV_PROP.INCLUDE_EXPORT)]
+    user_prop_name = StringProperty(
+                    name="Custom property name",
+                    description="Name of custom property",
+                    default=default_prop_name) # NMV_PROP.POP_LABEL
+
+    candidate_prop_names = EnumProperty(
+                    name='NMV Properties',
+                    items=default_candidates)
+
+
+    def invoke(self, context, event):
+
+        if (self.user_prop_name == self.default_prop_name == self.candidate_prop_names):
+            # Show interactive window to choose property name
+            return context.window_manager.invoke_props_dialog(self, width = 400)
+
+        if context.area.type == 'VIEW_3D':
+            return self.execute(context)
+        else:
+            self.report({'WARNING'}, "View3D not found, cannot run operator")
+            return {'CANCELLED'}
+
+
+    def execute(self, context):
+        """
+        Need this for changing properties in dialog window (redo support)
+        """
+        if self.user_prop_name == self.default_prop_name:
+            self.prop_name = self.candidate_prop_names
+        else:
+            self.prop_name = self.user_prop_name
+        
+        if context.area.type == 'VIEW_3D':
+            # the arguments we pass the the callback
+            args = (context,)
+            # Add the region OpenGL drawing callback
+            # draw in view space with 'POST_VIEW' and 'PRE_VIEW'
+            self._handle = bpy.types.SpaceView3D.draw_handler_add(
+                                self.draw_labels_callback, args, 'WINDOW', 'POST_PIXEL')
+
+            context.window_manager.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+        return {'FINISHED'}
+
 
     def modal(self, context, event):
         context.area.tag_redraw()
 
-        if event.type == 'MOUSEMOVE':
-            pass
-
-        elif event.type == 'LEFTMOUSE':
+        if event.type == 'LEFTMOUSE':
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
             return {'FINISHED'}
 
@@ -431,23 +465,191 @@ class ShowPopLabels(bpy.types.Operator):
             bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
             return {'CANCELLED'}
 
-        return {'RUNNING_MODAL'}
+        else:
+            # Keep running and drawing
+            return {'PASS_THROUGH'} # PASS_THROUGH allows interaction, RUNNING_MODAL blocks
+
+#    def draw(self, context):
+#        """
+#        Draw the props dialog window. Not needed for operator properties.
+#        """
+#        self.layout.row().prop(self, "prop_name")
+
+    def draw_labels_callback(self, context):
+        """
+        Callback function for drawing on the screen.
+        """
+
+        # camera = context.scene.camera # first needs to be aligned with view
+        font_id = 0  # XXX, need to find out how best to get this.
+        font_size = 10
+
+        # area = context.area # next((a for a in context.screen.areas if a.type == 'VIEW_3D'))
+        viewport = context.region # area.regions[4]
+        region = context.space_data.region_3d # area.spaces[0].region_3d
+
+        for obj in context.scene.objects:
+
+            # Check if it's a neuron with population label
+            if get_nmv_type(obj) not in (NMV_TYPE.NEURON_GEOMETRY,
+                                         NMV_TYPE.NEURON_PROXY):
+                continue
+            label = obj.get(self.prop_name, None)
+            if label is None:
+                continue
+            label = str(label)
+
+            # Get bounding box
+            # bbox_corners = np.array([obj.matrix_world * Vector(corner)
+            #                                 for corner in obj.bound_box])
+            # xyz_min = bbox_corners.min(axis=0)
+            # xyz_max = bbox_corners.max(axis=0)
+            # world_loc = Vector(0.5 * (xyz_min + xyz_max))
+            world_loc = obj.matrix_world.translation
+
+            # Get screen position of object
+            # ALT1: camera.getScreenPosition(obj)
+            # ALT2: bpy_extras.view3d_utils.location_3d_to_region_2d(...)
+            # ALT3: bpy_extras.object_utils.world_to_camera_view(scene, camera_obj, co_3d)
+
+            # screen_loc = bpy_extras.object_utils.world_to_camera_view(
+            #                 context.scene, camera, world_loc)
+
+            # view_mat = context.space_data.region_3d.perspective_matrix
+            # total_mat = view_mat * obj.matrix_world
+            # screen_loc = total_mat.translation # (0, 0, 0) in object spac 
+
+            screen_loc = bpy_extras.view3d_utils.location_3d_to_region_2d(
+                                                    viewport, region, world_loc)
+
+            # draw some text
+            if screen_loc:
+                x, y = screen_loc[0:2]
+                blf.position(font_id, x, y, 0.0)
+                blf.size(font_id, font_size, 72)
+                blf.draw(font_id, label)
+
+
+class ShowAxonPrePostCells(bpy.types.Operator):
+    """
+    Show axon source and target cells.
+    """
+
+    bl_idname = "axon.show_pre_post"
+    bl_label = "Show axon source and target cells."
 
 
     def invoke(self, context, event):
         if context.area.type == 'VIEW_3D':
-            # the arguments we pass the the callback
-            args = (self, context)
-            # Add the region OpenGL drawing callback
-            # draw in view space with 'POST_VIEW' and 'PRE_VIEW'
-            self._handle = bpy.types.SpaceView3D.draw_handler_add(
-                                draw_labels_callback, args, 'WINDOW', 'POST_PIXEL')
-
-            context.window_manager.modal_handler_add(self)
-            return {'RUNNING_MODAL'}
+            return self.execute(context)
         else:
             self.report({'WARNING'}, "View3D not found, cannot run operator")
             return {'CANCELLED'}
+
+
+    def execute(self, context):
+        """
+        Need this for changing properties in dialog window (redo support)
+        """
+        if context.active_object.get(NMV_PROP.OBJECT_TYPE, None) != NMV_TYPE.STREAMLINE:
+            self.report({'ERROR'}, 'Must select axon/streamline object.')
+            return {'CANCELLED'}
+
+        self.make_draw_data(context)
+        
+        if context.area.type == 'VIEW_3D':
+            # the arguments we pass the the callback
+            args = tuple()
+            # Add the region OpenGL drawing callback
+            # draw in view space with 'POST_VIEW' and 'PRE_VIEW'
+            # draw in 2d with 'POST_PIXEL'
+            self._handle = bpy.types.SpaceView3D.draw_handler_add(
+                                self.draw_callback, args, 'WINDOW', 'POST_VIEW')
+
+            context.window_manager.modal_handler_add(self)
+            return {'RUNNING_MODAL'}
+        
+        return {'FINISHED'}
+
+
+    def draw_callback(self):
+        # 50% alpha, 2 pixel width line
+        bgl.glEnable(bgl.GL_BLEND)
+        bgl.glColor4f(1.0, 0.0, 0.0, 0.7)
+        bgl.glLineWidth(2)
+
+        # Draw POST cell to end
+        for loc in self.post_cells_locs:
+            bgl.glBegin(bgl.GL_LINES) # bgl.GL_LINE_STRIP for 
+            bgl.glVertex3f(*self.axon_end_pt)
+            bgl.glVertex3f(*loc)
+            bgl.glEnd()
+
+        # Draw PRE cell to start
+        for loc in self.pre_cells_locs:
+            bgl.glBegin(bgl.GL_LINES) # bgl.GL_LINE_STRIP for 
+            bgl.glVertex3f(*self.axon_start_pt)
+            bgl.glVertex3f(*loc)
+            bgl.glEnd()
+
+
+        # restore opengl defaults
+        bgl.glLineWidth(1)
+        bgl.glDisable(bgl.GL_BLEND)
+        bgl.glColor4f(0.0, 0.0, 0.0, 1.0)
+
+
+    def make_draw_data(self, context):
+        """
+        Calculate data for drawing.
+        """
+        axon_obj = context.active_object
+
+        # Get pre and post cell locations
+        axon_pre_gid = axon_obj.get(NMV_PROP.AX_PRE_GID, None)
+        axon_post_gids = axon_obj.get(NMV_PROP.AX_POST_GIDS, [])
+
+        pre_cell_objs = circuit_data.get_geometries_of_type(
+            NEURON_TYPES, context.scene.objects,
+            selector=lambda obj: obj.get(NMV_PROP.CELL_GID, None) == axon_pre_gid)
+
+        post_cell_objs = circuit_data.get_geometries_of_type(
+            NEURON_TYPES, context.scene.objects,
+            selector=lambda obj: obj.get(NMV_PROP.CELL_GID, None) in axon_post_gids)
+
+
+        self.pre_cells_locs = [obj.matrix_world.translation for obj in pre_cell_objs]
+        self.post_cells_locs = [obj.matrix_world.translation for obj in post_cell_objs]
+
+        # Get axon start and end
+        spl = axon_obj.data.splines[0] # also works for polylines
+        self.axon_ends = [
+            (axon_obj.matrix_world * spl.points[i].co).to_3d() for i in (0, -1)
+        ]
+
+        end2pre_dists = [(self.pre_cells_locs[0] - end).length for end in self.axon_ends]
+        if end2pre_dists[0] < end2pre_dists[1]:
+            self.axon_start_pt = self.axon_ends[0]
+            self.axon_end_pt = self.axon_ends[1]
+        else:
+            self.axon_start_pt = self.axon_ends[1]
+            self.axon_end_pt = self.axon_ends[0]
+
+
+    def modal(self, context, event):
+        context.area.tag_redraw()
+
+        if event.type == 'LEFTMOUSE':
+            bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+            return {'FINISHED'}
+
+        elif event.type in {'RIGHTMOUSE', 'ESC'}:
+            bpy.types.SpaceView3D.draw_handler_remove(self._handle, 'WINDOW')
+            return {'CANCELLED'}
+
+        else:
+            # Keep running and drawing
+            return {'PASS_THROUGH'} # PASS_THROUGH allows interaction, RUNNING_MODAL blocks
 
 
 ################################################################################
@@ -457,7 +659,7 @@ class ShowPopLabels(bpy.types.Operator):
 # Classes to register with Blender
 _reg_classes = [
     CircuitsPanel, DefinePopulation, AssignPopulation, ExportCircuit,
-    SetAxonPreCell, SetAxonPostCell, ShowPopLabels
+    SetAxonPreCell, SetAxonPostCell, OverlayCustomProperty, ShowAxonPrePostCells
 ]
 
 
