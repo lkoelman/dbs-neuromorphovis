@@ -29,6 +29,49 @@ morph_3d_options.morphology.set_default()
     #   nmv.enums.Skeletonization.Method.DISCONNECTED_SECTIONS
     #   nmv.enums.Skeletonization.Method.CONNECTED_SECTION_ORIGINAL # default
 
+################################################################################
+# PERSISTENCE
+################################################################################
+
+@bpy.app.handlers.persistent
+def restore_neurons_from_blend_data(scene):
+    for bobj in bpy.data.objects:
+
+        # Query our custom properties
+        nmv_type = bobj.get(NMV_PROP.OBJECT_TYPE, None)
+        swc_type = bobj.get(NMV_PROP.SWC_STRUCTURE_ID, None)
+        SOMA_TYPE = 1
+        
+        if (nmv_type == NMV_TYPE.NEURON_GEOMETRY and swc_type == SOMA_TYPE):
+            add_neuron(Neuron(parent_geometry=bobj, draw_geometry=False))
+
+
+@bpy.app.handlers.persistent
+def save_neurons_to_blend_data(scene):
+    for neuron in neurons.values():
+        neuron.serialize_to_blend()
+
+
+@bpy.app.handlers.persistent
+def create_nmv_groups(scene):
+    """
+    Create blender object groups for grouping objects managed by the addon.
+    """
+    for grp_name in nmv_group_names.values():
+        group = bpy.data.groups.get(grp_name, None)
+        if group is None:
+            group = bpy.data.groups.new(grp_name)
+
+
+def register_handlers():
+    bpy.app.handlers.load_post.append(create_nmv_groups)
+    bpy.app.handlers.load_post.append(restore_neurons_from_blend_data)
+    bpy.app.handlers.load_post.append(save_neurons_to_blend_data)
+
+
+################################################################################
+# CIRCUIT MANAGEMENT
+################################################################################
 
 def add_neuron(neuron):
     global neurons
@@ -53,25 +96,6 @@ def import_neuron_from_file(swc_file):
                     draw_geometry=True,
                     draw_options=morph_3d_options)
     add_neuron(neuron)
-
-
-@bpy.app.handlers.persistent
-def restore_neurons_from_blend_data(scene):
-    for bobj in bpy.data.objects:
-
-        # Query our custom properties
-        nmv_type = bobj.get(NMV_PROP.OBJECT_TYPE, None)
-        swc_type = bobj.get(NMV_PROP.SWC_STRUCTURE_ID, None)
-        SOMA_TYPE = 1
-        
-        if (nmv_type == NMV_TYPE.NEURON_GEOMETRY and swc_type == SOMA_TYPE):
-            add_neuron(Neuron(parent_geometry=bobj, draw_geometry=False))
-
-
-@bpy.app.handlers.persistent
-def save_neurons_to_blend_data(scene):
-    for neuron in neurons.values():
-        neuron.serialize_to_blend()
 
 
 def add_neuron_with_geometry(parent_obj):
@@ -125,24 +149,16 @@ def get_geometries_of_type(nmv_type, selected, selector=None):
         nmv_type = [nmv_type]
 
     if selector is None:
-        selector = lambda crv: True
+        filter_func = lambda crv: True
     elif isinstance(selector, str):
-        selector = lambda crv: crv.get(selector, False)
+        filter_func = lambda crv: crv.get(selector, False)
+    else:
+        # assume selector is callable
+        filter_func = selector
 
     return [obj for obj in selected if (
                 (obj.get(NMV_PROP.OBJECT_TYPE, None) in nmv_type)
-                and (selector(obj)))]
-
-
-@bpy.app.handlers.persistent
-def create_nmv_groups(scene):
-    """
-    Create blender object groups for grouping objects managed by the addon.
-    """
-    for grp_name in nmv_group_names.values():
-        group = bpy.data.groups.get(grp_name, None)
-        if group is None:
-            group = bpy.data.groups.new(grp_name)
+                and (filter_func(obj)))]
 
 
 def make_duplicate_label(neuron):
@@ -169,7 +185,3 @@ def make_duplicate_label(neuron):
             return duplicate_label
 
 
-def register_handlers():
-    bpy.app.handlers.load_post.append(create_nmv_groups)
-    bpy.app.handlers.load_post.append(restore_neurons_from_blend_data)
-    bpy.app.handlers.load_post.append(save_neurons_to_blend_data)

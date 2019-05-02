@@ -179,22 +179,32 @@ def polyline_to_nurbs(tck_obj, subsample=1, origin_to=None):
     return curve_obj
 
 
-def spline_to_polyline(crv_obj, spacing=1.0):
+def spline_to_polyline(crv_obj, spacing=1.0, raw_coordinates=False):
     """
     Convert any spline-type curve to a polyline by sampling it
     at regular intervals.
+
+    @return     curve : bpy_types.Object or list[Vector]
+                If raw_coordinates is true, return list of coordinates,
+                else return blender object in scene.
     """
-    # sample every X mm and make polyline
+    # Curve length for parameterization of curve
     arclength = spline.arclength(crv_obj)
     if spacing >= arclength:
         raise ValueError('Spacing must be larger than length of curve.')
 
+    # sample every X mm and make polyline
     t_spacing = spacing / arclength
     t_samples = np.arange(0.0, 1.0 + t_spacing, t_spacing)
     t_samples = np.concatenate((t_samples[t_samples < 1], [1.0]))
     # t_samples = np.inspace(0, 1, int(arclength/spacing), endpoint=True)
 
-    verts = [spline.calct(crv_obj, t, local=True) for t in t_samples]
+    if raw_coordinates:
+        # Global coordinates
+        return [spline.calct(crv_obj, t, local=False) for t in t_samples]
+    else:
+        # Local coordinates, since we will apply same matrix_world
+        verts = [spline.calct(crv_obj, t, local=True) for t in t_samples]
 
     new_name = crv_obj.name + '_POLY'
     # crv_poly = draw_polyline_curve(new_name, verts, curve_type='POLY')

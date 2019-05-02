@@ -130,15 +130,26 @@ def load_streamlines(file_path, label=None, max_num=1e12, min_length=0.0,
     return streamlines_filtered
 
 
-def get_curve_point_coordinates(curve_object):
+def get_curve_point_coordinates(curve_object, coord_type=None):
     """
     Get vertex coordinates of Blender curve representing a streamline.
     """
     if curve_object.type != 'CURVE':
         raise ValueError(curve_object.type)
-    crv_geom = curve_object.data.splines[0]
-    num_pts = len(crv_geom.points)
-    return [(curve_object.matrix_world * crv_geom.points[i].co)[0:3] for i in range(num_pts)]
+    
+    spl = curve_object.data.splines[0]
+    if spl.type in ('NURBS', 'BEZIER'):
+        coords = nmv_curve.spline_to_polyline(curve_object,
+                            spacing=50.0, raw_coordinates=True)
+    else: # type = 'POLY'
+        num_pts = len(spl.points)
+        coords = [(curve_object.matrix_world * spl.points[i].co)[0:3] for i in range(num_pts)]
+
+    # Return as requested data type
+    if coord_type:
+        return [coord_type(pt) for pt in coords]
+    else:
+        return coords
 
 
 def get_streamline_material(state='DEFAULT'):
@@ -532,7 +543,7 @@ class AttachAxonToNeuron(bpy.types.Operator):
         description='Select axon stub curve rather than cell geometry.')
 
     copy_axon = BoolProperty(
-        default=False,
+        default=True,
         name='Copy axon before move',
         description='Select axon stub curve rather than cell geometry.')
 
@@ -559,7 +570,11 @@ class AttachAxonToNeuron(bpy.types.Operator):
             (NMV_TYPE.NEURON_PROXY, NMV_TYPE.NEURON_GEOMETRY), selected)
 
         # Get axon sample points
-        axon_pts = get_curve_point_coordinates(axon_obj)
+        # axon_pts = get_curve_point_coordinates(axon_obj)
+        spl = axon_obj.data.splines[0]
+        axon_ends = [
+            (axon_obj.matrix_world * spl.points[i].co).to_3d() for i in (0, -1)
+        ]
 
         # Check preconditions
         if not self.copy_axon and len(neuron_objects) > 1:
@@ -585,8 +600,8 @@ class AttachAxonToNeuron(bpy.types.Operator):
             
             
             # Translate closest end of axon to attachment point
-            p0 = mathutils.Vector(axon_pts[0])
-            p1 = mathutils.Vector(axon_pts[-1])
+            p0 = mathutils.Vector(axon_ends[0])
+            p1 = mathutils.Vector(axon_ends[-1])
             d0 = attachment_pt - p0
             d1 = attachment_pt - p1
             if d0.length < d1.length:
@@ -705,9 +720,10 @@ class ExportStreamlines(bpy.types.Operator):
         # Just export raw streamlines, metadata should be in config file
         streamlines = circuit_data.get_geometries_of_type(
                         NMV_TYPE.STREAMLINE,
+                        context.scene.objects,
                         selector=lambda crv: crv.get(_PROP_AX_EXPORT, False))
         tck_dict = {
-            crv.name: get_curve_point_coordinates(crv) for crv in streamlines
+            crv.name: get_curve_point_coordinates(crv, coord_type=list) for crv in streamlines
         }
 
         # Subdirectories for outputs are defined on io_panel.py
@@ -763,7 +779,7 @@ class SplineToPolyline(bpy.types.Operator):
                 
 
         # Make curve only selected object
-        context.active_object = curve_obj
+        context.scene.objects.active = curve_obj
         if curve_obj:
             for scene_object in context.scene.objects:
                 scene_object.select = False
@@ -797,6 +813,9 @@ class PolylineToSpline(bpy.types.Operator):
             if obj.type == 'CURVE':
                 curve_obj = nmv_curve.polyline_to_nurbs(obj, subsample=subsample, 
                                     origin_to='start')
+
+                # Set NMV attributes
+                curve_obj[NMV_PROP.OBJECT_TYPE] = NMV_TYPE.STREAMLINE
 
                 # Set appearance
                 curve_obj.data.bevel_object = obj.data.bevel_object

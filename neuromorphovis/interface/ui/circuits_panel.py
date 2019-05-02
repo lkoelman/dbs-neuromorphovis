@@ -68,10 +68,10 @@ class CircuitsPanel(bpy.types.Panel):
     bpy.types.Scene.CircuitName = StringProperty(
         name="Circuit Name",
         description="Name for exported circuit",
-        default='unnamed-circuit')
+        default='cell_axon_definitions')
 
     bpy.types.Scene.ExportStreamlinesWithConfig = BoolProperty(
-        name="Export streamlines with config.",
+        name="Rewrite axon coordinates",
         description="Export streamlines again when writing circuit config.",
         default=True)
 
@@ -107,7 +107,7 @@ class CircuitsPanel(bpy.types.Panel):
         layout = self.layout
 
         # Circuit Building -----------------------------------------------------
-        layout.row().label(text='Build Circuit:', icon='MOD_BUILD')
+        layout.row().label(text='Populations:', icon='MOD_BUILD')
 
         # Assign population to cells
         layout.row().prop(context.scene, 'DefinedPopLabels')
@@ -118,8 +118,11 @@ class CircuitsPanel(bpy.types.Panel):
 
         # Define a new population label
         layout.row().prop(context.scene, 'NewPopLabel')
-        layout.column(align=True).operator(DefinePopulation.bl_idname)
-
+        layout.column(align=True).operator(DefinePopulation.bl_idname,
+                                            icon='SORTALPHA')
+        
+        # Circuit Wiring -----------------------------------------------------
+        layout.row().label(text='Wiring:', icon='IPO')
         # Projections: associate axons
         layout.column(align=True).operator(SetAxonPreCell.bl_idname, 
                                             icon='FORCE_CURVE')
@@ -129,8 +132,8 @@ class CircuitsPanel(bpy.types.Panel):
         # Exporting ------------------------------------------------------------
         layout.row().label(text='Export Circuit:', icon='LIBRARY_DATA_DIRECT')
 
-        layout.row().prop(context.scene, 'CircuitName')
         layout.row().prop(context.scene, 'ExportStreamlinesWithConfig')
+        layout.row().prop(context.scene, 'CircuitName')
         layout.column(align=True).operator(ExportCircuit.bl_idname, icon='FILE_SCRIPT')
 
 
@@ -143,7 +146,7 @@ class DefinePopulation(bpy.types.Operator):
     Define a new cell population
     """
     bl_idname = "define.population"
-    bl_label = "Define population"
+    bl_label = "New population label"
 
     def execute(self, context):
         global pop_items
@@ -193,14 +196,14 @@ class AssignPopulation(bpy.types.Operator):
 
 class SetAxonPreCell(bpy.types.Operator):
     """
-    Set pre-synaptic cell for axon
+    Associate axon pre-synaptic cell
 
     @post   Blender object representing axon has custom property entries
             AX_PRE_GID and AX_PRE_NAME set to the presynaptic neuron's GID
             and label.
     """
     bl_idname = "axon.set_pre_cells"
-    bl_label = "Associate PRE cell"
+    bl_label = "Associate axon pre-synaptic (source) cell"
 
     def execute(self, context):
         """
@@ -240,13 +243,24 @@ class SetAxonPreCell(bpy.types.Operator):
 
 class SetAxonPostCell(bpy.types.Operator):
     """
-    Set axon target cells.
+    Associate axon target cells.
 
     @post   For each selected axon, all the selected neurons are appended
             the the axon's target GIDs.
     """
     bl_idname = "axon.set_post_cells"
-    bl_label = "Set axon target cells"
+    bl_label = "Associate axon post-synaptic (target) cells"
+
+    # Named arguments for operator
+    add = BoolProperty(
+                    default=False,
+                    name="Add to existing target cells",
+                    description="Add to existing target cells.")
+
+    subtract = BoolProperty(
+                    default=False,
+                    name="Remove selected cells.",
+                    description="Remove selected cells.")
 
     def execute(self, context):
         """
@@ -277,11 +291,20 @@ class SetAxonPostCell(bpy.types.Operator):
 
         # Set pre-synaptic cell GID
         for axon_obj in axon_objs:
-            old_post_gids = set(axon_obj.get('postsynaptic_cell_GIDs', []))
-            axon_obj[NMV_PROP.AX_POST_GIDS] = sorted(old_post_gids.union(post_cell_gids))
+            old_post_gids = set(axon_obj.get(NMV_PROP.AX_POST_GIDS, []))
+            if self.add:
+                new_post_gids = old_post_gids.union(post_cell_gids)
+            elif self.subtract:
+                new_post_gids = old_post_gids - post_cell_gids
+            else:
+                new_post_gids = post_cell_gids
+            axon_obj[NMV_PROP.AX_POST_GIDS] = sorted(new_post_gids)
 
         # Also toggle the axon for export
         bpy.ops.axon.toggle_export(export=True, toggle=False)
+
+        self.report({'INFO'}, 'Added cells <{}> as targets for {} axons(s).'.format(
+                    ','.join((str(i) for i in post_cell_gids)), len(axon_objs)))
 
         return {'FINISHED'}
 
@@ -335,38 +358,55 @@ class ExportCircuit(bpy.types.Operator):
         }
 
         # Get all neurons and axons in the scene
-        neurons = circuit_data.get_neurons()
-        axons = circuit_data.get_geometries_of_type(
+        neuron_objs = circuit_data.get_geometries_of_type(
+                                        NEURON_TYPES,
+                                        context.scene.objects)
+        axon_objs = circuit_data.get_geometries_of_type(
                                         NMV_TYPE.STREAMLINE,
+                                        context.scene.objects,
                                         selector=NMV_PROP.INCLUDE_EXPORT)
 
         # Add all cells and connections
-        for neuron in neurons:
-            xform_mat = neuron.get_transform()
-            xform_list = [list(xform_mat[i]) for i in range(4)]
+        for neuron_obj in neuron_objs:
+            gid = neuron_obj.get(NMV_PROP.CELL_GID, None)
+            morphology = circuit_data.get_neuron_from_blend_object(neuron_obj)
 
-            # Gather outgoing and incoming axosn
-            efferent_axon = next(
-                (ax for ax in axons if neuron.gid == ax.get(NMV_PROP.AX_PRE_GID, -1)),
-                None)
-            afferent_axons = set(
-                [ax.name for ax in axons if 
-                    neuron.gid in ax.get(NMV_PROP.AX_POST_GIDS, [])])
+            xform_mat = neuron_obj.matrix_world
+            xform_list = [jsonutil.NoIndent(list(xform_mat[i])) for i in range(4)]
+
+            # If neuron is a morphology, its samples will be saves usit its label
+            if morphology:
+                morph_name = morphology.label
+            else:
+                morph_name = None
+
+            # Gather outgoing and incoming axons
+            efferent_axon = next((ax.name for ax in axon_objs if 
+                                    gid == ax.get(NMV_PROP.AX_PRE_GID, -1)), None)
+            # afferent_axons = list(set((ax.name for ax in axon_objs if 
+            #                         gid in ax.get(NMV_PROP.AX_POST_GIDS, []))))
 
             circuit_config['cells'].append({
-                'gid': neuron.gid,
-                'morphology': neuron.label,
-                'transform': jsonutil.NoIndent(xform_list),
-                'axon': efferent_axon,
-                'afferent_axons': afferent_axons,
+                'name': neuron_obj.name,
+                'population': neuron_obj.get(NMV_PROP.POP_LABEL, None),
+                'gid': gid,
+                'morphology': morph_name,
+                'transform': xform_list,
+                'axon_efferent': efferent_axon,
+                # 'axons_afferent': afferent_axons,
             })
         
         # Find axons tagged for export
-        for curve_obj in axons:
+        for curve_obj in axon_objs:
+
+            # Gather pre- and post-synaptic cell GIDs
+            pre_gid = curve_obj.get(NMV_PROP.AX_PRE_GID, None)
+            post_gids = list(curve_obj.get(NMV_PROP.AX_POST_GIDS, []))
+
             circuit_config['connections'].append({
                 'axon': curve_obj.name,
-                'pre_gid': curve_obj.get(NMV_PROP.AX_PRE_GID, None),
-                'post_gids': curve_obj.get(NMV_PROP.AX_POST_GIDS, []),
+                'pre_gid': pre_gid,
+                'post_gids': jsonutil.NoIndent(post_gids),
             })
 
 
@@ -380,7 +420,13 @@ class ExportCircuit(bpy.types.Operator):
         out_fname = context.scene.CircuitName + '.json'
         out_fpath = os.path.join(out_fulldir, out_fname)
         with open(out_fpath, 'w') as f:
-            json.dump(circuit_config, f, indent=2, cls=jsonutil.VariableIndentEncoder)
+            # json.dump(circuit_config, f, indent=2, cls=jsonutil.VariableIndentEncoder)
+            # Must write to string for custom ecoder to work correctly
+            json_config = json.dumps(circuit_config, indent=2, sort_keys=False,
+                                     cls=jsonutil.VariableIndentEncoder)
+            f.write(json_config)
+
+        self.report({'INFO'}, 'Wrote circuit to file "{}"'.format(out_fpath))
 
         # Write streamlines if requested
         if context.scene.ExportStreamlinesWithConfig:
@@ -627,8 +673,16 @@ class ShowAxonPrePostCells(bpy.types.Operator):
             (axon_obj.matrix_world * spl.points[i].co).to_3d() for i in (0, -1)
         ]
 
-        end2pre_dists = [(self.pre_cells_locs[0] - end).length for end in self.axon_ends]
-        if end2pre_dists[0] < end2pre_dists[1]:
+        if len(self.pre_cells_locs) > 0:
+            end_dists = [(self.pre_cells_locs[0] - end).length for end in self.axon_ends]
+            i, j = 0, 1
+        elif len(self.post_cells_locs) > 0:
+            end_dists = [(self.post_cells_locs[0] - end).length for end in self.axon_ends]
+            i, j = 1, 0
+        else:
+            return
+            
+        if end_dists[i] < end_dists[j]:
             self.axon_start_pt = self.axon_ends[0]
             self.axon_end_pt = self.axon_ends[1]
         else:
