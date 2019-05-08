@@ -76,6 +76,7 @@ class NmvPropertyNames:
     CELL_LABEL = mkprop('cell_label', str)
     CELL_GID = mkprop('cell_gid', int)
     POP_LABEL = mkprop('pop_label', str)
+    PROJ_LABEL = mkprop('projection_label', str)
 
     # Streamlines
     INCLUDE_EXPORT = mkprop('include_export', bool)

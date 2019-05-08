@@ -28,7 +28,7 @@ import neuromorphovis as nmv
 import neuromorphovis.file.writers.json as jsonutil
 from neuromorphovis.interface.ui.ui_data import (
     NMV_PROP, NMV_TYPE, NEURON_TYPES, set_nmv_type, get_nmv_type)
-from neuromorphovis.interface.ui import circuit_data
+from neuromorphovis.interface.ui import circuit_data, ui_data
 
 ################################################################################
 # State variables
@@ -183,7 +183,7 @@ class AssignPopulation(bpy.types.Operator):
             # Check if object represents a neuron cell
             if nmv_type is None:
                 set_nmv_type(obj, NMV_TYPE.NEURON_PROXY)
-            elif nmv_type != NMV_TYPE.NEURON_GEOMETRY:
+            elif nmv_type not in NEURON_TYPES:
                 continue
 
             obj[NMV_PROP.POP_LABEL] = new_label
@@ -402,9 +402,11 @@ class ExportCircuit(bpy.types.Operator):
             # Gather pre- and post-synaptic cell GIDs
             pre_gid = curve_obj.get(NMV_PROP.AX_PRE_GID, None)
             post_gids = list(curve_obj.get(NMV_PROP.AX_POST_GIDS, []))
+            proj_label = curve_obj.get(NMV_PROP.PROJ_LABEL, None)
 
             circuit_config['connections'].append({
                 'axon': curve_obj.name,
+                'projection': proj_label,
                 'pre_gid': pre_gid,
                 'post_gids': jsonutil.NoIndent(post_gids),
             })
@@ -455,6 +457,8 @@ class OverlayCustomProperty(bpy.types.Operator):
                                       NMV_PROP.POP_LABEL,
                                       NMV_PROP.CELL_GID,
                                       NMV_PROP.INCLUDE_EXPORT)]
+
+    # Properties are shown during invoke_props_dialog()
     user_prop_name = StringProperty(
                     name="Custom property name",
                     description="Name of custom property",
@@ -574,6 +578,64 @@ class OverlayCustomProperty(bpy.types.Operator):
                 blf.position(font_id, x, y, 0.0)
                 blf.size(font_id, font_size, 72)
                 blf.draw(font_id, label)
+
+
+class MassSetCustomProperty(bpy.types.Operator):
+    """
+    Set custom (string) property for each object (mass set)
+    """
+
+    bl_idname = "property.set_foreach"
+    bl_label = "Set custom property value for each object (mass set)"
+
+    custom_candidate = "Custom"
+    placeholder_candidate = "<property name>"
+    prop_candidates = [custom_candidate] + list(ui_data.nmv_reserved_property_names.keys())
+    enum_candidates = [(item, item, 'Property "{}"'.format(item)) for 
+                            item in prop_candidates]
+
+    # Operator arguments, also shown during invoke_props_dialog()
+    user_prop_value = StringProperty(
+                    name="Custom property value",
+                    description="Value of custom property",
+                    default='value')
+
+    user_prop_name = StringProperty(
+                    name="Custom property name",
+                    description="Name of custom property",
+                    default=placeholder_candidate) # NMV_PROP.POP_LABEL
+
+    candidate_prop_names = EnumProperty(
+                    name='NMV Properties',
+                    items=enum_candidates)
+
+
+    def invoke(self, context, event):
+
+        if (self.user_prop_name == self.placeholder_candidate and
+            self.candidate_prop_names == self.custom_candidate):
+            # Show interactive window to choose property name
+            return context.window_manager.invoke_props_dialog(self, width = 400)
+
+        if context.area.type == 'VIEW_3D':
+            return self.execute(context)
+        else:
+            self.report({'WARNING'}, "View3D not found, cannot run operator")
+            return {'CANCELLED'}
+
+
+    def execute(self, context):
+        """
+        Need this for changing properties in dialog window (redo support)
+        """
+        if self.candidate_prop_names == self.custom_candidate:
+            self.prop_name = self.user_prop_name
+        else:
+            self.prop_name = self.candidate_prop_names
+        
+        for obj in context.selected_objects:
+            obj[self.prop_name] = self.user_prop_value
+        return {'FINISHED'}
 
 
 class ShowAxonPrePostCells(bpy.types.Operator):
@@ -713,7 +775,8 @@ class ShowAxonPrePostCells(bpy.types.Operator):
 # Classes to register with Blender
 _reg_classes = [
     CircuitsPanel, DefinePopulation, AssignPopulation, ExportCircuit,
-    SetAxonPreCell, SetAxonPostCell, OverlayCustomProperty, ShowAxonPrePostCells
+    SetAxonPreCell, SetAxonPostCell, OverlayCustomProperty, MassSetCustomProperty, 
+    ShowAxonPrePostCells
 ]
 
 
