@@ -62,7 +62,7 @@ def getnurbspoints(spl, mw):
     pts = []
     ws = []
     for p in spl.points:
-        v = Vector(p.co[0:3])*mw
+        v = (mw * Vector(p.co[0:3]).to_4d()).to_3d()
         pts.append(v)
         ws.append(p.weight)
     return pts , ws
@@ -180,7 +180,7 @@ def calct(obj, t, local=False):
             seg-=1
             t1 = 1.0
 
-        p = getbezpoints(spl,mw, seg)
+        p = getbezpoints(spl, mw, seg)
 
         coord = cubic(p, t1)
 

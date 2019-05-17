@@ -97,10 +97,13 @@ def load_streamlines(file_path, label=None, max_num=1e12, min_length=0.0,
     if file_path.endswith('.pkl'):
         with open(file_path, 'rb') as file:
             f_contents = pickle.load(file, encoding=encoding)
-        if label is not None:
-            streamlines = f_contents[label]
+        if label is None or label == '':
+            if isinstance(f_contents, dict):
+                streamlines = f_contents.values()
+            else:
+                streamlines = f_contents
         else:
-            streamlines = f_contents
+            streamlines = f_contents[label]
     else:
         # Assume tractography file
         tck_file = nib.streamlines.load(file_path, lazy_load=True)
@@ -440,6 +443,7 @@ class ImportStreamlines(bpy.types.Operator):
 
         # Create curves
         for tck_coords in streamlines:
+            tck_coords = np.asarray(tck_coords, dtype=float)
             tck_name = 'tck'
             if context.scene.StreamlinesLabel != '':
                 tck_name += '_' + context.scene.StreamlinesLabel
@@ -735,7 +739,7 @@ class ExportStreamlines(bpy.types.Operator):
         # save as pickle to selected path
         out_fpath = os.path.join(out_fulldir, 'axon_coordinates.pkl')
         with open(out_fpath, "wb") as f:
-            pickle.dump(tck_dict, f)
+            pickle.dump(tck_dict, f, protocol=2) # python2-compatible serialization
 
         self.report({'INFO'}, 'Wrote axons to file {}'.format(out_fpath))
         return {'FINISHED'}
@@ -743,7 +747,7 @@ class ExportStreamlines(bpy.types.Operator):
 
 class SplineToPolyline(bpy.types.Operator):
     """
-    Convert spline-type curve to polyline
+    Convert NURBS or Bezier curve to polyline
     """
 
     # Operator parameters

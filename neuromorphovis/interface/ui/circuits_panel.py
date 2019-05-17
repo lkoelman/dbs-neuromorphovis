@@ -392,7 +392,7 @@ class ExportCircuit(bpy.types.Operator):
                 'gid': gid,
                 'morphology': morph_name,
                 'transform': xform_list,
-                'axon_efferent': efferent_axon,
+                'axon': efferent_axon,
                 # 'axons_afferent': afferent_axons,
             })
         

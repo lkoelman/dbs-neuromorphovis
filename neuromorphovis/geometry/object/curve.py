@@ -184,6 +184,10 @@ def spline_to_polyline(crv_obj, spacing=1.0, raw_coordinates=False):
     Convert any spline-type curve to a polyline by sampling it
     at regular intervals.
 
+    @param      raw_coordinates : bool
+                True if result should be list[Vector] of coordinates
+                rather than curve object.
+
     @return     curve : bpy_types.Object or list[Vector]
                 If raw_coordinates is true, return list of coordinates,
                 else return blender object in scene.
