@@ -382,7 +382,8 @@ class ExportCircuit(bpy.types.Operator):
 
             # Gather outgoing and incoming axons
             efferent_axon = next((ax.name for ax in axon_objs if 
-                                    gid == ax.get(NMV_PROP.AX_PRE_GID, -1)), None)
+                                    gid == ax.get(NMV_PROP.AX_PRE_GID, -1) and
+                                    ax.get(NMV_PROP.INCLUDE_EXPORT, False)), None)
             # afferent_axons = list(set((ax.name for ax in axon_objs if 
             #                         gid in ax.get(NMV_PROP.AX_POST_GIDS, []))))
 
