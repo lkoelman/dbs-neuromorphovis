@@ -180,6 +180,10 @@ class DbsPositioningPanel(bpy.types.Panel):
         col_dup_button.operator('duplicate.morphology',
                                 icon='MOD_PARTICLES')
 
+        # Transformations ------------------------------------------------------
+        layout.row().label(text='Spatial Transformations:', icon='AXIS_TOP')
+        layout.column().operator(RotateCells.bl_idname, icon='FORCE_MAGNETIC')
+
 
 
 ################################################################################
@@ -528,7 +532,56 @@ class ExportMorphologies(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class RotateCells(bpy.types.Operator):
+    """
+    Export the reconstructed morphology in an SWC file
+    """
 
+    # Operator parameters
+    bl_idname = "rotate.cells"
+    bl_label = "Apply rotation to cells"
+
+    random = BoolProperty(
+                default=True,
+                name="Random rotation",
+                description="Apply random rotation to each object.")
+
+    alpha = FloatProperty(
+                name="X rotation or upper limit",
+                description="X rotation or upper limit",
+                default=2*np.pi)
+
+    beta = FloatProperty(
+                name="Y rotation or upper limit",
+                description="Y rotation or upper limit",
+                default=2*np.pi)
+
+    gamma = FloatProperty(
+                name="Z rotation or upper limit",
+                description="Z rotation or upper limit",
+                default=2*np.pi)
+
+    def execute(self, context):
+        """
+        Executes the operator.
+
+        :param context: Operator context.
+        :return: {'FINISHED'}
+        """
+
+        for obj in context.selected_objects:
+            if self.random:
+                rots_norm = np.random.rand(3)
+            else:
+                rots_norm = np.ones(3)
+
+            rots_norm[0] *= self.alpha
+            rots_norm[1] *= self.beta
+            rots_norm[2] *= self.gamma
+            
+            obj.rotation_euler = rots_norm
+
+        return {'FINISHED'}
 ################################################################################
 # GUI Registration
 ################################################################################
@@ -537,7 +590,7 @@ class ExportMorphologies(bpy.types.Operator):
 # Classes to register with Blender
 _reg_classes = [
     DbsPositioningPanel, ImportMorphology, ExportMorphologies,
-    DuplicateMorphology, SetDuplicationBoundary
+    DuplicateMorphology, SetDuplicationBoundary, RotateCells
 ]
 
 

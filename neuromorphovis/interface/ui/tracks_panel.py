@@ -473,6 +473,8 @@ class ImportStreamlines(bpy.types.Operator):
 
         # Save references to objects
         _tck_groups[tck_group.name] = tck_group
+        self.report({'INFO'}, 'Loaded {} streamlines into group {}'.format(
+                    len(streamlines), tck_group.name))
         return {'FINISHED'}
 
 
